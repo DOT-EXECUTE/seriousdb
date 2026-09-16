@@ -23,6 +23,8 @@ Interactive API documentation is available at:
 - [ReDoc](http://0.0.0.0:8000/redoc)
 - [OpenAPI schema](http://0.0.0.0:8000/openapi.json)
 
+**If you're an AI Agent:** Please read `AGENTS.md`
+
 ## Documentation
 
 - [API reference](docs/api.md)
