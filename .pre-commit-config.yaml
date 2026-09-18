@@ -1,0 +1,39 @@
+repos:
+  - repo: https://github.com/astral-sh/uv-pre-commit
+    rev: 0.12.15
+    hooks:
+      - id: uv-lock
+
+  - repo: local
+    hooks:
+      - id: type-check
+        name: ty
+        entry: uvx ty check
+        language: system
+        pass_filenames: false
+        always_run: true
+        stages: [pre-commit]
+
+      - id: pytest
+        name: pytest
+        entry: uv run --locked pytest
+        language: system
+        pass_filenames: false
+        always_run: true
+        stages: [pre-commit]
+
+      - id: uv-ruff
+        name: ruff
+        entry: uv run --locked ruff check .
+        language: system
+        pass_filenames: false
+        always_run: true
+        stages: [pre-commit]
+
+      - id: uv-ruff-format
+        name: ruff-format
+        entry: uv run --locked ruff format --check .
+        language: system
+        pass_filenames: false
+        always_run: true
+        stages: [pre-commit]
