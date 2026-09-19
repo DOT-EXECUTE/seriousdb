@@ -87,16 +87,13 @@ class TestCacheLogging:
             for r in caplog.records
         ), f"Expected corruption warning, got: {[r.message for r in caplog.records]}"
 
-    def test_flush_logs_error_when_db_not_loaded(self, caplog):
+    def test_flush_is_a_noop(self, caplog):
         cache = Cache()  # never loaded
 
-        with caplog.at_level(logging.ERROR, logger="seriousdb.cache"):
+        with caplog.at_level(logging.DEBUG, logger="seriousdb.cache"):
             cache.flush()
 
-        assert any(
-            "Cannot flush" in r.message and r.levelno == logging.ERROR
-            for r in caplog.records
-        )
+        assert not any(r.levelno >= logging.WARNING for r in caplog.records)
 
     def test_require_db_raises_when_db_is_none(self):
         cache = Cache()

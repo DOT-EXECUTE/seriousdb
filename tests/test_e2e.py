@@ -4,7 +4,6 @@ Uses only stdlib unittest and FastAPI's TestClient, both already available via t
 project's existing `fastapi[standard]` dependency (no extra packages required).
 """
 
-import json
 import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -12,6 +11,7 @@ from tempfile import TemporaryDirectory
 from fastapi.testclient import TestClient
 
 from seriousdb import main
+from seriousdb.cache import Cache
 
 
 class DocumentedApiTests(unittest.TestCase):
@@ -72,12 +72,17 @@ class DocumentedApiTests(unittest.TestCase):
         response = self.client.head("/db", params={"key": "does-not-exist"})
         self.assertEqual(response.status_code, 404)
 
-    def test_put_persists_to_db_file_on_disk(self):
-        # docs/persistence.md: each PUT writes the complete dictionary back to disk.
-        self.client.put("/db", params={"key": "name", "value": "Alice"})
+    def test_put_persists_across_reload(self):
+        # docs/persistence.md: each PUT is durably logged before the response returns,
+        # so a reload recovers it even before the next compaction.
+        put_response = self.client.put("/db", params={"key": "name", "value": "Alice"})
+        self.assertEqual(put_response.status_code, 201)
+        reloaded = Cache()
+        reloaded.load(main.DB_FILE)
+        with reloaded.lock:
+            from seriousdb.cache import require_db
 
-        on_disk = json.loads(Path(main.DB_FILE).read_text())
-        self.assertEqual(on_disk["name"], "Alice")
+            self.assertEqual(require_db(reloaded)["name"], "Alice")
 
     def test_delete_existing_key_removes_it(self):
         put_response = self.client.put("/db", params={"key": "name", "value": "Alice"})

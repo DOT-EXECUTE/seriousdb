@@ -148,7 +148,7 @@ class Cache:
         renamed to ``<filename>.corrupt-<unix timestamp>``, a warning is
         logged, and a new file with an empty database is created in its
         place.
-        
+
         After the snapshot is loaded, any entries in the write-ahead log
         (``<filename>.wal``) are replayed on top of it, recovering writes
         that happened after the last compaction.
@@ -197,19 +197,18 @@ class Cache:
 
     def flush(self) -> None:
         """No-op, kept for backward compatibility.
-        
+
         Durability is now handled per-write via the write-ahead log (see :meth:`_append_wal`),
         so nothing needs to happen here. `main.py` still schedules this as a background task after
         each write; this method exists so that call keeps working without change.
         """
-        
         return
-    
-    #------ Write-ahead log internals -----------------------------------------#
-    
+
+    # ------ Write-ahead log internals -----------------------------------------#
+
     def _record_write(self, op: dict) -> None:
         """Persist `op` to the write-ahead log and compact if due.
-        
+
         Parameters
         ----------
         op : dict
@@ -219,17 +218,17 @@ class Cache:
         self._writes_since_compact += 1
         if self._writes_since_compact >= COMPACTION_THRESHOLD:
             self._compact()
-            
+
     def _append_wal(self, op: dict) -> None:
         """Append `op` to the write-ahead log file and fsync it.
-        
+
         Does nothing if no database has been loaded.
-        
+
         Parameters
         ----------
         op : dict
             A JSON-serializable write operation.
-            
+
         Raises
         ------
         OSError
@@ -241,10 +240,10 @@ class Cache:
             f.write((json.dumps(op) + "\n").encode())
             f.flush()
             os.fsync(f.fileno())
-            
+
     def _replay_wal(self) -> None:
         """Apply every entry in the write-ahead log to `self.db`.
-        
+
         Must be called after `self.db` and `self.wal_filename` are set.
         Stops at the first entry that cannot be parsed; An uncomplete write
         by a crash mid-append, and logs a warning instead of raising
@@ -267,29 +266,30 @@ class Cache:
                     )
                     break
                 self._apply_op(op)
-                
+
     def _apply_op(self, op: dict) -> None:
         """Apply a single decoded write-ahead log entry to `self.db`.
-        
+
         Parameters
         ----------
         op : dict
             A decoded WAL entry, as produced by :meth:`_append_wal`.
         """
+        db = require_db(self)
         if op.get("op") == "set":
-            self.db[op["key"]] = op["value"]
+            db[op["key"]] = op["value"]
         elif op.get("op") == "delete":
-            self.db.pop(op["key"], None)
-            
+            db.pop(op["key"], None)
+
     def _compact(self) -> None:
         """Write `self.db` to `self.filename` and clear the write-ahead log.
-        
+
         Both the snapshot and the emptied WAL are written atomically via temporary
         file and `os.replace`, in that order, so a crash at any point during compaction
         leaves either the old snapshot with a non-empty WAL, or the new snapshot with an
         empty WAL, and never a lost or corrupted state. Replaying the same WAL entry twice is harmless,
         since ``set``/``delete`` are overlayable.
-        
+
         Raises
         ------
         OSError
@@ -297,7 +297,7 @@ class Cache:
         """
         if self.db is None or self.filename is None:
             return
-        
+
         tmp_path = f"{self.filename}.tmp-{os.getpid()}"
         with open(tmp_path, "wb") as f:
             f.write(json.dumps(self.db).encode())
@@ -305,13 +305,13 @@ class Cache:
             os.fsync(f.fileno())
         os.replace(tmp_path, self.filename)
         logger.info("Compacted database into %s", self.filename)
-        
+
         if self.wal_filename is not None:
             tmp_wal = f"{self.wal_filename}.tmp-{os.getpid()}"
             with open(tmp_wal, "wb"):
                 pass
             os.replace(tmp_wal, self.wal_filename)
-            
+
         self.writes_since_compact = 0
 
 
