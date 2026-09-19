@@ -10,8 +10,9 @@ database file (by default ``.sdb``, see :mod:`seriousdb.config`) is loaded
 automatically on the first call; use :func:`load` to load a different file
 explicitly.
 
-:func:`set` and :func:`delete` flush the database file before they return,
-so a successful call is persisted. All functions are thread-safe.
+:func:`set` and :func:`delete` durably append to the write-ahead log before
+they return, so a successful call is persisted even before the next compaction.
+All functions are thread-safe.
 """
 
 from collections.abc import Iterable

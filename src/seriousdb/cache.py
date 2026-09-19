@@ -1,8 +1,10 @@
-"""In-memory key-value cache backed by a JSON file.
+"""In-memory key-value cache backed by a JSON file and a write-ahead log.
 
-The whole database is held in memory as a ``dict`` and written back to disk
-with :meth:`Cache.flush`. All access to the data is guarded by a lock, so a
-single :class:`Cache` can be shared between request handlers.
+The whole database is held in memory as a ``dict``. Writes are durably
+appeneded to a write-ahead log (WAL) before returning, and periodically
+compacted into the full JSON snapshot file (see :data:`COMPACTION_THRESHOLD`).
+All access to the data is guarded by a lock, so a single :class:`Cache` can
+be shared between request handlers.
 """
 
 import json
@@ -312,7 +314,7 @@ class Cache:
                 pass
             os.replace(tmp_wal, self.wal_filename)
 
-        self.writes_since_compact = 0
+        self._writes_since_compact = 0
 
 
 def _write_default(filename: str) -> dict[str, str]:

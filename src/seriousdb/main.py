@@ -47,8 +47,8 @@ def get_cache() -> Cache:
         - `201` if `key` did not exist yet
         - `200` if an existing value was overwritten
 
-        The database file is updated in the background, so the change is
-        persisted shortly after the response is sent.
+        The change is durably logged before this response is sent, and the database
+        file itself is rewritten periodically as writes accumulate.
         """
     ),
     response_description="The existing value was overwritten. Returns the stored value.",
@@ -190,8 +190,8 @@ def count(cache: Annotated[Cache, Depends(get_cache)]) -> int:
         """
         Removes `key` from the database and returns its previous value.
 
-        The database file is updated in the background, so the change is
-        persisted shortly after the response is sent.
+        The change is durably logged before this response is sent, and the database
+        file itself is rewritten periodically as writes accumulate.
         """
     ),
     response_description="The value the key had before it was deleted.",
