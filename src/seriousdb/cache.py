@@ -16,6 +16,7 @@ from .exceptions import ResourceNotFoundError, ServiceUnavailableError
 logger = logging.getLogger(__name__)
 
 DEFAULT_DB = {}
+COMPACTION_THRESHOLD = 50
 
 
 class Cache:
@@ -29,21 +30,29 @@ class Cache:
     ----------
     filename : str or None
         Path of the database file, or ``None`` if nothing has been loaded.
+    wal_filename: str or None
+        Path of the database WAL file, or ``None`` if nothing has been loaded.
     db : dict of str to str or None
         The stored key-value pairs, or ``None`` if nothing has been loaded.
     lock : threading.Lock
         Lock that must be held while reading or changing `db`.
+    _writes_since_compact: int
+        Counter for number of writes since last compaction.
     """
 
     def __init__(self):
         self.filename: str | None = None
+        self.wal_filename: str | None = None
         self.db: dict[str, str] | None = None
         self.lock = Lock()
+        self._writes_since_compact: int = 0
 
     def insert(self, key: str, value: str) -> tuple[str, bool]:
         """Store `value` under `key`, replacing any existing value.
 
-        The change is only kept in memory; call :meth:`flush` to persist it.
+        The change is appended to the write-ahead log (WAL) before this method
+        returns, so it survives a crash immediately; the full database snapshot file
+        is only rewritten periodically, by :meth:`_compact`.
 
         Parameters
         ----------
@@ -69,6 +78,7 @@ class Cache:
             db = require_db(self)
             is_new_key = key not in db
             db[key] = value
+            self._record_write({"op": "set", "key": key, "value": value})
         return value, is_new_key
 
     def select(self, key: str) -> str:
@@ -101,7 +111,8 @@ class Cache:
     def delete(self, key: str) -> str:
         """Remove `key` and return the value it had.
 
-        The change is only kept in memory; call :meth:`flush` to persist it.
+        If `key` existed, the removal is appended to the write-ahead log (WAL) file
+        before this method returns.
 
         Parameters
         ----------
@@ -122,6 +133,8 @@ class Cache:
         """
         with self.lock:
             val = require_db(self).pop(key, None)
+            if val is not None:
+                self._record_write({"op": "delete", "key": key})
         if val is None:
             logger.debug("Key not found: %s", key)
             raise ResourceNotFoundError(f"No value set for key {key}")
@@ -135,6 +148,10 @@ class Cache:
         renamed to ``<filename>.corrupt-<unix timestamp>``, a warning is
         logged, and a new file with an empty database is created in its
         place.
+        
+        After the snapshot is loaded, any entries in the write-ahead log
+        (``<filename>.wal``) are replayed on top of it, recovering writes
+        that happened after the last compaction.
 
         Parameters
         ----------
@@ -174,24 +191,128 @@ class Cache:
                     )
                     self.db = _write_default(filename)
             self.filename = filename
+            self.wal_filename = f"{filename}.wal"
+            self._writes_since_compact = 0
+            self._replay_wal()
 
     def flush(self) -> None:
-        """Write the current data to the database file.
-
-        The file is overwritten with the full database. Does nothing if no
-        database has been loaded.
-
+        """No-op, kept for backward compatibility.
+        
+        Durability is now handled per-write via the write-ahead log (see :meth:`_append_wal`),
+        so nothing needs to happen here. `main.py` still schedules this as a background task after
+        each write; this method exists so that call keeps working without change.
+        """
+        
+        return
+    
+    #------ Write-ahead log internals -----------------------------------------#
+    
+    def _record_write(self, op: dict) -> None:
+        """Persist `op` to the write-ahead log and compact if due.
+        
+        Parameters
+        ----------
+        op : dict
+            A JSON-serializable write operation.
+        """
+        self._append_wal(op)
+        self._writes_since_compact += 1
+        if self._writes_since_compact >= COMPACTION_THRESHOLD:
+            self._compact()
+            
+    def _append_wal(self, op: dict) -> None:
+        """Append `op` to the write-ahead log file and fsync it.
+        
+        Does nothing if no database has been loaded.
+        
+        Parameters
+        ----------
+        op : dict
+            A JSON-serializable write operation.
+            
         Raises
         ------
         OSError
-            If the file cannot be written.
+            If the WAL file cannot be written.
         """
-        with self.lock:
-            if self.db is None or self.filename is None:
-                logger.error("Cannot flush database: database is not loaded")
-                return
-            with open(self.filename, "wb+") as f:
-                f.write(json.dumps(self.db).encode())
+        if self.wal_filename is None:
+            return
+        with open(self.wal_filename, "ab") as f:
+            f.write((json.dumps(op) + "\n").encode())
+            f.flush()
+            os.fsync(f.fileno())
+            
+    def _replay_wal(self) -> None:
+        """Apply every entry in the write-ahead log to `self.db`.
+        
+        Must be called after `self.db` and `self.wal_filename` are set.
+        Stops at the first entry that cannot be parsed; An uncomplete write
+        by a crash mid-append, and logs a warning instead of raising
+        every entry before it has already been applied.
+        """
+        if self.wal_filename is None or not os.path.isfile(self.wal_filename):
+            return
+        with open(self.wal_filename, "rb") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    op = json.loads(line.decode())
+                except (json.JSONDecodeError, UnicodeDecodeError) as e:
+                    logger.warning(
+                        "Stopping WAL replay at truncated/corrupt entry in %s (%s)",
+                        self.wal_filename,
+                        e,
+                    )
+                    break
+                self._apply_op(op)
+                
+    def _apply_op(self, op: dict) -> None:
+        """Apply a single decoded write-ahead log entry to `self.db`.
+        
+        Parameters
+        ----------
+        op : dict
+            A decoded WAL entry, as produced by :meth:`_append_wal`.
+        """
+        if op.get("op") == "set":
+            self.db[op["key"]] = op["value"]
+        elif op.get("op") == "delete":
+            self.db.pop(op["key"], None)
+            
+    def _compact(self) -> None:
+        """Write `self.db` to `self.filename` and clear the write-ahead log.
+        
+        Both the snapshot and the emptied WAL are written atomically via temporary
+        file and `os.replace`, in that order, so a crash at any point during compaction
+        leaves either the old snapshot with a non-empty WAL, or the new snapshot with an
+        empty WAL, and never a lost or corrupted state. Replaying the same WAL entry twice is harmless,
+        since ``set``/``delete`` are overlayable.
+        
+        Raises
+        ------
+        OSError
+            If the temporary or final files cannot be written.
+        """
+        if self.db is None or self.filename is None:
+            return
+        
+        tmp_path = f"{self.filename}.tmp-{os.getpid()}"
+        with open(tmp_path, "wb") as f:
+            f.write(json.dumps(self.db).encode())
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp_path, self.filename)
+        logger.info("Compacted database into %s", self.filename)
+        
+        if self.wal_filename is not None:
+            tmp_wal = f"{self.wal_filename}.tmp-{os.getpid()}"
+            with open(tmp_wal, "wb"):
+                pass
+            os.replace(tmp_wal, self.wal_filename)
+            
+        self.writes_since_compact = 0
 
 
 def _write_default(filename: str) -> dict[str, str]:
