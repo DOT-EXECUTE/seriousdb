@@ -41,7 +41,8 @@ def load(filename: str | Path = DB_FILE) -> None:
 
     If the file does not exist, it is created with an empty database.
     If it is not valid UTF-8 JSON or does not contain a JSON object, it is
-    renamed to ``<filename>.corrupt-<unix timestamp>`` and replaced with an empty database.
+    renamed to ``<filename>.corrupt-<unix timestamp>`` (with a numeric suffix
+    if that path already exists) and replaced with an empty database.
 
     Parameters
     ----------

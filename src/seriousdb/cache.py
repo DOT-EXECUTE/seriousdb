@@ -159,9 +159,10 @@ class Cache:
 
         If the file does not exist, it is created with an empty database.
         If it is not valid UTF-8 JSON or does not contain a JSON object, it is
-        renamed to ``<filename>.corrupt-<unix timestamp>``, a warning is
-        logged, and a new file with an empty database is created in its
-        place.
+        renamed to ``<filename>.corrupt-<unix timestamp>``. If that backup
+        already exists, a numeric suffix is appended (such as ``-1``, ``-2``,
+        etc.) to avoid overwriting it. A warning is logged, and a new file with
+        an empty database is created in its place.
 
         After the snapshot is loaded, any entries in the write-ahead log
         (``<filename>.wal``) are replayed on top of it, recovering writes
@@ -197,7 +198,7 @@ class Cache:
                         logger.info("Loaded database from %s", filename)
 
                 except (json.JSONDecodeError, UnicodeDecodeError, TypeError) as e:
-                    backup = f"{filename}.corrupt-{int(time.time())}"
+                    backup = _generate_corrupt_backup_path(filename)
                     os.replace(filename, backup)
                     logger.warning(
                         "Corrupt database file %s (%s); moved to %s and starting fresh",
@@ -375,6 +376,32 @@ def _write_default(filename: str) -> dict[str, str]:
     with open(filename, "wb") as f:
         f.write(json.dumps(DEFAULT_DB).encode())
     return dict(DEFAULT_DB)
+
+
+def _generate_corrupt_backup_path(filename: str) -> str:
+    """Generate an unused backup path for a corrupt database file.
+
+    The first backup uses ``<filename>.corrupt-<unix timestamp>``.
+    If that path already exists, numeric suffixes such as ``-1``,
+    ``-2`` and so on are tried until an unused path is found.
+
+    Parameters
+    ----------
+    filename : str
+        Path of the database file.
+
+    Returns
+    -------
+    str
+        Unused backup path.
+    """
+    base = f"{filename}.corrupt-{int(time.time())}"
+    if not os.path.lexists(base):
+        return base
+    counter = 1
+    while os.path.lexists(f"{base}-{counter}"):
+        counter += 1
+    return f"{base}-{counter}"
 
 
 def require_db(cache: Cache) -> dict[str, str]:
