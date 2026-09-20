@@ -85,7 +85,14 @@ class Cache:
             is_new_key = key not in db
             self._record_write({"op": "set", "key": key, "value": value})
             db[key] = value
-            self._maybe_compact()
+            try:
+                self._maybe_compact()
+            except OSError as e:
+                logger.error(
+                    "Compaction failed after durable write to %s: %s",
+                    self.filename,
+                    e,
+                )
         return value, is_new_key
 
     def select(self, key: str) -> str:
@@ -148,7 +155,14 @@ class Cache:
             if val is not None:
                 self._record_write({"op": "delete", "key": key})
                 db.pop(key, None)
-                self._maybe_compact()
+                try:
+                    self._maybe_compact()
+                except OSError as e:
+                    logger.error(
+                        "Compaction failed after durable write to %s: %s",
+                        self.filename,
+                        e,
+                    )
         if val is None:
             logger.debug("Key not found: %s", key)
             raise ResourceNotFoundError(f"No value set for key {key}")

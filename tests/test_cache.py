@@ -86,6 +86,26 @@ def test_compaction_counter_resets_after_compacting(db_path):
     assert wal_lines == [json.dumps({"op": "set", "key": "one_more", "value": "value"})]
 
 
+def test_insert_succeeds_even_when_compaction_fails(db_path, monkeypatch):
+    """A write is durable the moment it's WAL appended, a failure in the unrelated compaction
+    step afterward must not make the write itself look like it failed."""
+    cache = Cache()
+    cache.load(str(db_path))
+    assert cache.db is not None
+
+    def boom():
+        raise OSError("simulated disk-full during compaction")
+
+    monkeypatch.setattr(cache, "_compact", boom)
+    monkeypatch.setattr(cache, "_writes_since_compact", COMPACTION_THRESHOLD)
+
+    value, is_new_key = cache.insert("name", "Alice")
+
+    assert value == "Alice"
+    assert is_new_key
+    assert cache.db["name"] == "Alice"
+
+
 def test_replay_recovers_from_torn_last_wal_entry(db_path):
     """A crash mid-appened leaves a truncated last line. Replay recovers everything
     before it and does not raise."""
