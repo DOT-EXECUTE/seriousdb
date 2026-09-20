@@ -128,3 +128,79 @@ def test_replay_is_overlayable_after_interrupted_compaction(db_path):
     reloaded.load(str(db_path))
 
     assert reloaded.db == {"a": "1", "b": "2"}
+
+
+def test_insert_leaves_state_unchanged_when_wal_append_fails(db_path, monkeypatch):
+    """A failed WAL append must not leave the in-memory cache disagreeing with what's
+    actually durable."""
+    cache = Cache()
+    cache.load(str(db_path))
+    assert cache.db is not None
+
+    def boom(op):
+        raise OSError("simulated disk failure")
+
+    monkeypatch.setattr(cache, "_append_wal", boom)
+
+    with pytest.raises(OSError):
+        cache.insert("name", "Alice")
+
+    assert "name" not in cache.db
+
+    reloaded = Cache()
+    reloaded.load(str(db_path))
+    assert reloaded.db is not None
+    assert "name" not in reloaded.db
+
+
+def test_deletes_leaves_state_unchanged_when_wal_append_fails(db_path, monkeypatch):
+    cache = Cache()
+    cache.load(str(db_path))
+    assert cache.db is not None
+    cache.insert("name", "Alice")
+
+    def boom(op):
+        raise OSError("simulated disk failure")
+
+    monkeypatch.setattr(cache, "_append_wal", boom)
+
+    with pytest.raises(OSError):
+        cache.delete("name")
+
+    assert cache.db["name"] == "Alice"
+
+    reloaded = Cache()
+    reloaded.load(str(db_path))
+    assert reloaded.db is not None
+    assert reloaded.db["name"] == "Alice"
+
+
+def test_replay_repairs_wal_so_later_appends_stay_clean(db_path):
+    """A torn last entry must be truncated from the WAL file during replay, not just skipped
+    in memory, otherwise a live process resuming writes after recovery corrupts everything appended
+    from then on."""
+    cache = Cache()
+    cache.load(str(db_path))
+    assert cache.wal_filename is not None
+    cache.insert("a", "1")
+    cache.insert("b", "2")
+
+    with open(cache.wal_filename, "rb") as f:
+        wal_bytes = f.read()
+    with open(cache.wal_filename, "wb") as f:
+        f.write(wal_bytes[:-3])
+
+    recovered = Cache()
+    recovered.load(str(db_path))
+    assert recovered.wal_filename is not None
+    assert recovered.db == {"a": "1"}
+
+    with open(recovered.wal_filename, "rb") as f:
+        repaired_bytes = f.read()
+    assert repaired_bytes == b"" or repaired_bytes.endswith(b"\n")
+
+    recovered.insert("c", "3")
+
+    final = Cache()
+    final.load(str(db_path))
+    assert final.db == {"a": "1", "c": "3"}

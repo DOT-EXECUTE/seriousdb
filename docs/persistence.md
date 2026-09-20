@@ -4,8 +4,12 @@ Data is stored in a local file named `.sdb` in the process working directory, al
 
 The `.sdb` file contains a serialized Python dictionary written with the standard-library `json` module. On first startup, the application creates it with:
 
+```json
+{}
+```
+
 The [architecture guide](architecture.md#call-flow) shows when the API loads and writes its cache.
-Direct `Cache` mutations require an explicit `flush()`.
+Direct `Cache` mutations (such as `insert` and `delete`) are persisted immediately to disk via the WAL. As a result, explicitly calling `flush()` is no longer required and acts as a no-op for backward compatibility.
 
 The database is loaded into memory once at startup. Each write (`PUT` or `DELETE`) updates the in-memory dictionary and immediately appends a record of the change to `.sdb.wal`, which is flushed and fsynced before the request completes, so a write is durable the moment it succeeds, even if the process crashes immediately after.
 

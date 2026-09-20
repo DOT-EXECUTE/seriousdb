@@ -8,9 +8,6 @@ Attributes
 DB_FILE : str
     Path of the JSON database file, from ``SERIOUSDB_DB_FILE``.
     Defaults to ``.sdb``.
-WAL_FILE : str
-    Path of the JSON database WAL file, from ``SERIOUS_WAL_FILE``.
-    Defaults to ``.sdb.wal``.
 LOG_LEVEL : str
     Name of the logging level, from ``SERIOUSDB_LOG_LEVEL``.
     Defaults to ``INFO``.
@@ -23,5 +20,4 @@ from dotenv import load_dotenv
 load_dotenv()
 
 DB_FILE = os.getenv("SERIOUSDB_DB_FILE", ".sdb")
-WAL_FILE = os.getenv("SERIOUSDB_WAL_FILE", ".sdb.wal")
 LOG_LEVEL = os.getenv("SERIOUSDB_LOG_LEVEL", "INFO")
