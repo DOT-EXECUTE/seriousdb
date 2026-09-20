@@ -19,7 +19,6 @@ classifiers = [
 ]
 
 dependencies = [
-    "fastapi[standard]>=0.141.1",
     "python-dotenv>=1.0",
 ]
 
@@ -37,6 +36,7 @@ dev = [
     "pytest>=9.1.1",
     "ruff>=0.16.7",
     "ty>=0.0.81",
+    "pre-commit"
 ]
 
 [build-system]

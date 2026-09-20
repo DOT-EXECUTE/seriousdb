@@ -1,8 +1,7 @@
 """Synchronous Python API of seriousdb.
 
 This module is the storage layer of seriousdb: other Python projects can
-import the package and call the functions exported here directly, without
-going through the HTTP interface.
+import the package and call the functions exported here directly.
 
 All functions operate on a single, module-level
 :class:`~seriousdb.cache.Cache` that is shared with the HTTP server. The

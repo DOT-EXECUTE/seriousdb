@@ -2,28 +2,29 @@
 
 # seriousdb - A seriously simple database
 
-`seriousdb` is a small, simple key-value database you can query directly over HTTP. It requires zero configuration and is designed to be effortless.
-For fullstack projects, `seriousdb` can replace your complete backend.
+`seriousdb` is a small, simple key-value database you import directly into your Python project. It
+requires zero configuration and is designed to be effortless.
 
-For setup, usage, architecture, persistence, and contribution guidance, see the [documentation](docs/).
+For setup, usage, architecture, persistence, and contribution guidance, see the
+[documentation](docs/).
 
 ## Quick Start
 
-### Use as Python library
+### Use as a Python library
 
-Install using
+Install with pip:
 
-- pip:
 ```bash
-pip install git+https://github.com/danieldeer/seriousdb.git
-```
-Or
-- uv:
-```bash
-uv add git+https://github.com/danieldeer/seriousdb.git
+pip install seriousdb
 ```
 
-Then use it directly form your python project:
+Or add it to a uv project:
+
+```bash
+uv add seriousdb
+```
+
+Then use it directly from your Python project:
 
 ```python
 import seriousdb
@@ -32,31 +33,13 @@ seriousdb.set("name", "Alice")
 print(seriousdb.get("name"))
 ```
 
-### Run as HTTP server
-
-Clone the repository, install the project, and start the development server:
-
-```bash
-git clone https://github.com/danieldeer/seriousdb.git
-cd seriousdb
-uv sync
-uv run run.py
-```
-
-The server is available at `http://127.0.0.1:8000`.
-
-> To change the default IP and PORT, define the environment variables `APP_HOST` and `APP_PORT` to your preferred values.
-
-Interactive API documentation is available at:
-
-- [Swagger UI](http://127.0.0.1:8000/docs)
-- [ReDoc](http://127.0.0.1:8000/redoc)
-- [OpenAPI schema](http://127.0.0.1:8000/openapi.json)
+The database is loaded on first use. See the [API reference](docs/api.md) for supported operations
+and [persistence](docs/persistence.md) for file handling and concurrency limits.
 
 ## Configuration
 
-Server configuration is optional and can be customized from environment variables.
-Copy the example file and adjust for local development:
+Configuration is optional and can be customized from environment variables. Copy the example file
+and adjust for local development:
 
 ```bash
 cp .env.example .env
@@ -64,12 +47,12 @@ cp .env.example .env
 
 The `.env` file is gitignored and should never be committed.
 
-| Variable              | Default     | Description                                        |
-| --------------------- | ----------- | -------------------------------------------------- |
-| `SERIOUSDB_DB_FILE`   | `.sdb`      | Path to the on-disk database file.                 |
-| `SERIOUSDB_LOG_LEVEL` | `INFO`      | Logging level (DEBUG/INFO/WARNING/ERROR/CRITICAL). |
-| `SERIOUSDB_HOST`      | `127.0.0.1` | Host IP where the API is running.                  |
-| `SERIOUSDB_PORT`      | `8000`      | Host port which is used by the API.                |
+| Variable | Default | Description | | --------------------- | ------- |
+--------------------------------------------------- | | `SERIOUSDB_DB_FILE` | `.sdb` | Path to the
+on-disk database file. | | `SERIOUSDB_LOG_LEVEL` | `INFO` | Logging level
+(DEBUG/INFO/WARNING/ERROR/CRITICAL). |
+
+Set configuration before importing `seriousdb`.
 
 ## Documentation
 
@@ -80,6 +63,7 @@ The `.env` file is gitignored and should never be committed.
 - [Contributing](docs/contributing.md)
 - [Testing](docs/testing.md)
 - [Project configuration](docs/configuration.md)
+- [Changelog](CHANGELOG.md)
 
 ## License
 

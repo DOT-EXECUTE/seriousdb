@@ -1,7 +1,9 @@
 import json
 from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
 
 import pytest
+from pytest import MonkeyPatch
 
 from seriousdb import api
 from seriousdb.cache import Cache
@@ -9,7 +11,7 @@ from seriousdb.exceptions import ResourceNotFoundError
 
 
 @pytest.fixture
-def db_file(tmp_path, monkeypatch):
+def db_file(tmp_path: Path, monkeypatch: MonkeyPatch):
     monkeypatch.chdir(tmp_path)
     db_file = tmp_path / ".sdb"
     with open(db_file, "w") as f:

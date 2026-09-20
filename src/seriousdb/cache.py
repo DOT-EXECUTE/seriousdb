@@ -10,6 +10,7 @@ be shared between request handlers.
 import json
 import logging
 import os
+import tempfile
 import time
 from threading import Lock
 
@@ -286,7 +287,7 @@ class Cache:
     def _compact(self) -> None:
         """Write `self.db` to `self.filename` and clear the write-ahead log.
 
-        Both the snapshot and the emptied WAL are written atomically via temporary
+        Both the snapshot and the emptied WAL are written atomically via a temporary
         file and `os.replace`, in that order, so a crash at any point during compaction
         leaves either the old snapshot with a non-empty WAL, or the new snapshot with an
         empty WAL, and never a lost or corrupted state. Replaying the same WAL entry twice is harmless,
@@ -300,19 +301,21 @@ class Cache:
         if self.db is None or self.filename is None:
             return
 
-        tmp_path = f"{self.filename}.tmp-{os.getpid()}"
-        with open(tmp_path, "wb") as f:
-            f.write(json.dumps(self.db).encode())
-            f.flush()
-            os.fsync(f.fileno())
-        os.replace(tmp_path, self.filename)
+        dir_name = os.path.dirname(self.filename) or "."
+        with tempfile.NamedTemporaryFile("wb", dir=dir_name, delete=False) as tmp_file:
+            tmp_file.write(json.dumps(self.db).encode())
+            tmp_file.flush()
+            os.fsync(tmp_file.fileno())
+        os.replace(tmp_file.name, self.filename)
         logger.info("Compacted database into %s", self.filename)
 
         if self.wal_filename is not None:
-            tmp_wal = f"{self.wal_filename}.tmp-{os.getpid()}"
-            with open(tmp_wal, "wb"):
+            wal_dir = os.path.dirname(self.wal_filename) or "."
+            with tempfile.NamedTemporaryFile(
+                "wb", dir=wal_dir, delete=False
+            ) as tmp_wal:
                 pass
-            os.replace(tmp_wal, self.wal_filename)
+            os.replace(tmp_wal.name, self.wal_filename)
 
         self._writes_since_compact = 0
 
