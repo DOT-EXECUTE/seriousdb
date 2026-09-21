@@ -88,7 +88,8 @@ def test_every_wal_write_requires_persistence(
     entries = make_entries(100, 32)
     write_database(path, entries)
     cache = load_cache(str(path))
-    original = cache._append_wal
+    assert cache.wal is not None
+    original = cache.wal.append
     calls = 0
 
     def sometimes_noop(op):
@@ -97,7 +98,7 @@ def test_every_wal_write_requires_persistence(
         if calls != bad_call:
             original(op)
 
-    monkeypatch.setattr(cache, "_append_wal", sometimes_noop)
+    monkeypatch.setattr(cache.wal, "append", sometimes_noop)
     with pytest.raises(AssertionError):
         test_persistence.test_flush(Rounds(disabled), cache, path, entries, 3)
     assert calls == bad_call

@@ -45,7 +45,7 @@ def test_batch_write_and_persist(
     benchmark.extra_info["file_bytes"] = database_file.stat().st_size
 
 
-@pytest.mark.benchmark(group="seriousdb-flush")
+@pytest.mark.benchmark(group="seriousdb-insert")
 def test_flush(
     benchmark,
     loaded_cache: Cache,
@@ -58,7 +58,7 @@ def test_flush(
     changed_key = entries[0][0]
 
     def prepare_write():
-        """Change one value outside timing so flush has new state to persist."""
+        """Change one value outside timing so there's new state to write."""
         # Keeping the value the same size avoids changing the workload each round.
         expected[changed_key] = expected[changed_key][::-1]
 

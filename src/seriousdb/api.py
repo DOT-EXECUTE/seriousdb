@@ -3,14 +3,6 @@
 This module is the storage layer of seriousdb: other Python projects can
 import the package and call the functions exported here directly.
 
-All functions operate on a single, module-level
-:class:`~seriousdb.cache.Cache` that is shared with the HTTP server. The
-database file (by default ``.sdb``, see :mod:`seriousdb.config`) is loaded
-automatically on the first call; use :func:`load` to load a different file
-explicitly.
-
-:func:`set` and :func:`delete` durably append to the write-ahead log before
-they return, so a successful call is persisted even before the next compaction.
 All functions are thread-safe.
 """
 
