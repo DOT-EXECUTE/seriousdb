@@ -2,6 +2,20 @@
 
 # seriousdb - A seriously simple database
 
+<div align="center">
+
+[![Tests](https://github.com/danieldeer/seriousdb/actions/workflows/tests.yml/badge.svg)](https://github.com/danieldeer/seriousdb/actions/workflows/tests.yml)
+[![Lint](https://github.com/danieldeer/seriousdb/actions/workflows/lint.yml/badge.svg)](https://github.com/danieldeer/seriousdb/actions/workflows/lint.yml)
+[![Typecheck](https://github.com/danieldeer/seriousdb/actions/workflows/typecheck.yml/badge.svg)](https://github.com/danieldeer/seriousdb/actions/workflows/typecheck.yml)
+[![Version](https://img.shields.io/badge/dynamic/regex?url=https%3A%2F%2Fraw.githubusercontent.com%2Fdanieldeer%2Fseriousdb%2Fmain%2FVERSION&search=(.%2B)&label=version)](https://github.com/danieldeer/seriousdb/blob/main/VERSION)
+[![Python](https://img.shields.io/badge/python-3.11%2B-blue)](https://github.com/danieldeer/seriousdb)
+[![License](https://img.shields.io/github/license/danieldeer/seriousdb)](https://github.com/danieldeer/seriousdb/blob/main/LICENSE)
+[![Stars](https://img.shields.io/github/stars/danieldeer/seriousdb)](https://github.com/danieldeer/seriousdb/stargazers)
+[![Forks](https://img.shields.io/github/forks/danieldeer/seriousdb)](https://github.com/danieldeer/seriousdb/network/members)
+[![Open Source](https://img.shields.io/badge/Open%20Source-%E2%9D%A4-blueviolet?logo=github)](https://github.com/danieldeer/seriousdb)
+
+</div>
+
 `seriousdb` is a small, simple key-value database you import directly into your Python project. It
 requires zero configuration and is designed to be effortless.
 
