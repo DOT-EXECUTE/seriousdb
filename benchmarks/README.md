@@ -1,7 +1,8 @@
 # Benchmarks
 
-The suite measures [`Cache`](../src/seriousdb/cache.py) directly, excluding the
-`seriousdb.api` wrapper. All scenarios use isolated temporary database files.
+The process benchmarks exercise [`seriousdb.api`](../src/seriousdb/api.py), the
+interface used by applications. The other scenarios measure
+[`Cache`](../src/seriousdb/cache.py) directly. All scenarios use isolated temporary files.
 
 ## Run benchmarks
 
@@ -60,7 +61,7 @@ uv run --locked --group benchmark -m benchmarks -k process_reads --process-count
 | [Persistence](test_persistence.py)  | Batch creation and persistence; flush only; 100 overwrites with individual or batched flushes. |
 | [Mixed workload](test_workloads.py) | Shuffled 90% reads and 10% overwrites in one resident cache.                                   |
 | [Threads](test_concurrency.py)      | The mixed workload split across threads sharing one cache.                                     |
-| [Processes](test_processes.py)      | Cold loads and resident reads across independent caches, plus optional shared-file writes.     |
+| [Processes](test_processes.py)      | API loads and resident reads across processes, plus optional API writes to a shared file.      |
 
 Scenarios use `benchmark.pedantic` to separate timed operations from setup and
 verification. Checks run after every warmup and measured round. Explicit final
@@ -109,18 +110,19 @@ the unrecorded warmup. This scenario measures scheduling and contention on the s
 
 ### Process reads
 
-The [worker helpers](_processes.py) use `spawn` on every platform. Each child has
-its own `Cache`, and all children access the same temporary file. Each round splits
-the keys across children, keeping the total number of lookups fixed as the process
-count increases. Every child loads the whole database when loading is required.
+The [worker helpers](_processes.py) use `spawn` on every platform. Each child uses
+its own instance of the API module, with `api.load(filename)` selecting the shared
+temporary file. Workers read through `api.get()` and check key counts through
+`api.count()`. Each round splits the keys across children, keeping the total number
+of lookups fixed as the process count increases.
 
-| Mode            | Timed cache work                                                                 |
-|-----------------|----------------------------------------------------------------------------------|
-| `load-and-read` | Create a fresh cache, load the file and read the assigned keys in every process. |
-| `resident-read` | Read assigned keys from each process's cache, loaded once before timing.         |
+| Mode            | Timed cache work                                                                                             |
+|-----------------|--------------------------------------------------------------------------------------------------------------|
+| `load-and-read` | Call `api.load()` to reload the file, then `api.get()` for assigned keys and `api.count()` in every process. |
+| `resident-read` | Call `api.get()` for assigned keys and `api.count()`, with `api.load()` called once before timing.           |
 
 Processes start and reach a synchronization point before timing begins. Timings
-include task dispatch, synchronization, cache operations, serialization and transfer
+include task dispatch, synchronization, API operations, serialization and transfer
 of results to the parent. They exclude startup, initial file creation and correctness
 checks. Small datasets can be dominated by communication costs.
 
@@ -136,17 +138,23 @@ Enable the write probe with:
 uv run --locked --group benchmark -m benchmarks -k process_writes --multiprocess-writes -rx
 ```
 
-Each round restores the original file outside timing. All children load that
-snapshot and synchronize before overwriting disjoint keys, each flushing its
-nonempty batch once. Snapshot loading, synchronization, writes, flushes, local
-readback and result communication are timed. Startup and verification are excluded.
+Each round restores the original JSON fixture outside timing. All children call
+`api.load()` and synchronize before overwriting disjoint keys through `api.set()`.
+Every `set()` persists its change before returning. The workload updates 100 keys
+in total (or all keys if fewer), keeping the number of writes fixed as datasets grow.
+API loading, synchronization, writes including persistence, local readback with
+`api.get()`, `api.count()` and result communication are timed. Startup and
+verification are excluded.
 
 The parent checks local readback and the combined persisted updates by reading raw
-JSON, without allowing `Cache.load` to repair corruption. A single writer must pass.
+JSON, without allowing a database load to repair corruption. Unchanged keys are
+also checked. A single writer must pass.
 Lost updates, invalid JSON or Windows atomic replacement conflicts (access denied,
 sharing or lock violations on the shared destination) with multiple writers are
 reported as `XFAIL` after collecting timings. Saved metadata includes
 `correctness=failed` and failure reasons. Unexpected worker errors still fail the test.
+After a recognized replacement conflict, the worker continues attempting the
+remaining assigned writes; the round stays failed even if a later write succeeds.
 
 Failed write timings describe an unsuccessful workload and must not be treated as
 valid write throughput. Successful rounds do not establish general process safety;
@@ -159,6 +167,11 @@ as dataset size, value size and worker count. Compare matching scenarios, datase
 worker counts and workload versions on the same idle machine, Python version and
 storage. Check revision and persistence semantics too: adding `fsync`, for example,
 changes the work performed even if the scenario name stays the same.
+
+Workload version 6 switches process benchmarks to the API, including one persisted
+write per `set()` call. Start a new baseline for these results; earlier process
+write samples used one flush per worker. Process results record
+`interface=seriousdb.api` in their metadata.
 
 Use the median and spread rather than a single fastest sample. Start a fresh baseline
 when the workload version changes. OPS counts complete scenarios per second, not

@@ -8,13 +8,12 @@ from multiprocessing.synchronize import Barrier
 from pathlib import Path
 from typing import NamedTuple
 
-from seriousdb.cache import Cache
+from seriousdb import api
 
-from ._support import Entries, load_cache, read_resident, write_entries
+from ._support import Entries
 
 WORKER_TIMEOUT = 60
 _start: Barrier
-_cache: Cache | None = None
 
 
 class WorkerResult(NamedTuple):
@@ -30,36 +29,33 @@ def _initialize(start: Barrier) -> None:
 
 
 def _worker(filename: str, entries: Entries, mode: str) -> WorkerResult:
-    global _cache
     # Preload outside timing for resident reads. For writes, load before the
     # barrier so no writer can race another process's initial file read.
     if mode in ("preload", "write"):
-        _cache = load_cache(filename)
+        api.load(filename)
     # One task per process: no worker can finish and take another worker's task
     # while the remaining workers are still starting or loading their caches.
     _start.wait(timeout=WORKER_TIMEOUT / 2)
     if mode in ("ready", "preload"):
         return WorkerResult(os.getpid(), [], 0)
     if mode == "load-and-read":
-        cache = load_cache(filename)
+        api.load(filename)
     else:
         assert mode in ("resident-read", "write")
-        assert _cache is not None
-        cache = _cache
     write_error = None
     if mode == "write":
-        try:
-            write_entries(cache, entries, max(1, len(entries)))
-        except PermissionError as error:
-            # Windows can reject concurrent atomic replacements of the shared
-            # file. Preserve this failed-write sample; unrelated errors propagate.
-            code = getattr(error, "winerror", None)
-            if code not in (5, 32, 33) or error.filename2 != filename:
-                raise
-            write_error = f"atomic replacement conflict (WinError {code})"
-    values = read_resident(cache, entries)
-    assert cache.db is not None
-    return WorkerResult(os.getpid(), values, len(cache.db), write_error)
+        for key, value in entries:
+            try:
+                api.set(key, value)
+            except PermissionError as error:
+                # Attempt all assigned API writes, recording recognized Windows
+                # replacement conflicts. Unrelated errors still propagate.
+                code = getattr(error, "winerror", None)
+                if code not in (5, 32, 33) or error.filename2 != filename:
+                    raise
+                write_error = f"atomic replacement conflict (WinError {code})"
+    values = [api.get(key) for key, _ in entries]
+    return WorkerResult(os.getpid(), values, api.count(), write_error)
 
 
 @contextmanager

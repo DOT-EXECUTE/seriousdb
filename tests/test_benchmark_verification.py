@@ -8,6 +8,7 @@ from types import SimpleNamespace
 import pytest
 
 from benchmarks import (
+    _processes,
     test_concurrency,
     test_persistence,
     test_processes,
@@ -121,8 +122,8 @@ def test_process_reads_verify_every_round(
                 database_file.write_text("{}", encoding="utf-8")
         return results
 
-    monkeypatch.setattr(test_processes, "process_pool", lambda _: nullcontext())
-    monkeypatch.setattr(test_processes, "run_workers", run)
+    monkeypatch.setattr(_processes, "process_pool", lambda _: nullcontext())
+    monkeypatch.setattr(_processes, "run_workers", run)
     with pytest.raises(AssertionError):
         test_processes.test_process_reads(Rounds(disabled), path, entries, 3, 2, mode)
     assert calls == bad_call
@@ -149,8 +150,8 @@ def test_process_write_failures_are_reported(
             for i, chunk in enumerate(chunks)
         ]
 
-    monkeypatch.setattr(test_processes, "process_pool", lambda _: nullcontext())
-    monkeypatch.setattr(test_processes, "run_workers", run)
+    monkeypatch.setattr(_processes, "process_pool", lambda _: nullcontext())
+    monkeypatch.setattr(_processes, "run_workers", run)
     failure = pytest.fail.Exception if processes == 1 else pytest.xfail.Exception
     with pytest.raises(failure):
         test_processes.test_process_writes(
@@ -185,8 +186,8 @@ def test_process_write_conflicts_are_reported_even_when_file_is_correct(
             for i, chunk in enumerate(chunks)
         ]
 
-    monkeypatch.setattr(test_processes, "process_pool", lambda _: nullcontext())
-    monkeypatch.setattr(test_processes, "run_workers", run)
+    monkeypatch.setattr(_processes, "process_pool", lambda _: nullcontext())
+    monkeypatch.setattr(_processes, "run_workers", run)
     failure = pytest.fail.Exception if processes == 1 else pytest.xfail.Exception
     with pytest.raises(failure, match="atomic replacement conflict"):
         test_processes.test_process_writes(
@@ -197,6 +198,36 @@ def test_process_write_conflicts_are_reported_even_when_file_is_correct(
         assert benchmark.extra_info["persistence_failures"] == [
             "atomic replacement conflict (WinError 5)"
         ]
+
+
+@pytest.mark.parametrize("entry_count", [10, 150])
+def test_process_api_writes_bound_work_and_preserve_other_keys(
+    tmp_path, monkeypatch, entry_count
+):
+    entries = make_entries(entry_count, 32)
+    benchmark = Rounds(True)
+    request = SimpleNamespace(config=SimpleNamespace(getoption=lambda _: True))
+
+    def run(_pool, path, chunks, mode):
+        if mode == "ready":
+            return []
+        assert sum(map(len, chunks)) == min(100, entry_count)
+        persisted = json.loads(path.read_bytes())
+        persisted.update(item for chunk in chunks for item in chunk)
+        path.write_text(json.dumps(persisted))
+        return [
+            WorkerResult(i, [value for _, value in chunk], entry_count)
+            for i, chunk in enumerate(chunks)
+        ]
+
+    monkeypatch.setattr(_processes, "process_pool", lambda _: nullcontext())
+    monkeypatch.setattr(_processes, "run_workers", run)
+    test_processes.test_process_writes(
+        benchmark, tmp_path / "database.json", entries, 1, 2, request
+    )
+    assert benchmark.extra_info["writes"] == min(100, entry_count)
+    assert benchmark.extra_info["flush_every"] == 1
+    assert benchmark.extra_info["correctness"] == "passed"
 
 
 @pytest.mark.parametrize(

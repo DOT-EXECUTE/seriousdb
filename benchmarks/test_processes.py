@@ -5,12 +5,12 @@ from pathlib import Path
 
 import pytest
 
-from ._processes import WorkerResult, process_pool, run_workers
-from ._support import WARMUP_ROUNDS, Entries, write_database
+from . import _processes
+from ._support import WARMUP_ROUNDS, Entries
 
 
 def _verify_reads(
-    results: list[WorkerResult], chunks: list[Entries], key_count: int
+    results: list[_processes.WorkerResult], chunks: list[Entries], key_count: int
 ) -> None:
     assert len(results) == len(chunks)
     assert len({result.pid for result in results}) == len(chunks)
@@ -30,25 +30,27 @@ def test_process_reads(
     processes: int,
     mode: str,
 ) -> None:
-    write_database(database_file, entries)
+    # Seed the fixture outside timing without depending on storage internals.
+    database_file.write_text(json.dumps(dict(entries)), encoding="utf-8")
     original = database_file.read_bytes()
     chunks = [entries[index::processes] for index in range(processes)]
-    results: list[WorkerResult] = []
+    results: list[_processes.WorkerResult] = []
     benchmark.extra_info.update(
         workers=processes,
-        concurrency="spawned processes with independent caches, shared file",
+        interface="seriousdb.api",
+        concurrency="spawned processes with independent API state, shared file",
         start_method="spawn",
         file_bytes=len(original),
         reads=len(entries),
         loads_per_round=processes if mode == "load-and-read" else 0,
         workload="fixed total reads split across processes",
-        cache_state="fresh Cache per round" if mode == "load-and-read" else "resident",
-        timing="dispatch, synchronization, cache operations and result IPC; excludes startup",
+        cache_state="api.load each round" if mode == "load-and-read" else "resident",
+        timing="dispatch, synchronization, API operations and result IPC; excludes startup",
     )
 
-    with process_pool(processes) as pool:
+    with _processes.process_pool(processes) as pool:
         # Wait for every child to start (and optionally load) outside timing.
-        run_workers(
+        _processes.run_workers(
             pool,
             database_file,
             chunks,
@@ -57,7 +59,7 @@ def test_process_reads(
 
         def read():
             nonlocal results
-            results = run_workers(pool, database_file, chunks, mode)
+            results = _processes.run_workers(pool, database_file, chunks, mode)
 
         def verify():
             _verify_reads(results, chunks, len(entries))
@@ -87,22 +89,26 @@ def test_process_writes(
             "opt in with --multiprocess-writes; concurrent writes may lose data"
         )
 
-    updates = tuple((key, value[::-1]) for key, value in entries)
+    # Each API set persists the whole file; bound writes for the extended datasets.
+    updates = tuple((key, value[::-1]) for key, value in entries[:100])
+    expected = dict(entries)
+    expected.update(updates)
     chunks = [updates[index::processes] for index in range(processes)]
-    results: list[WorkerResult] = []
+    results: list[_processes.WorkerResult] = []
     failures: list[str] = []
     benchmark.extra_info.update(
         workers=processes,
+        interface="seriousdb.api",
         concurrency="experimental shared-file writes from independent processes",
         start_method="spawn",
-        writes=len(entries),
-        flushes=min(processes, len(entries)),
-        persistence="Cache.flush with file fsync and atomic replacement; concurrent writes unsupported",
-        timing="load snapshots, synchronize, write, flush, read back locally and result IPC; excludes startup",
+        writes=len(updates),
+        flush_every=1,
+        persistence="api.set persists each write; concurrent writes unsupported",
+        timing="API load, synchronize, set, get, count and result IPC; excludes startup",
     )
 
-    with process_pool(processes) as pool:
-        run_workers(pool, database_file, chunks, "ready")
+    with _processes.process_pool(processes) as pool:
+        _processes.run_workers(pool, database_file, chunks, "ready")
 
         def restore():
             # Replace directly: never load or repair a previous corrupt result.
@@ -110,7 +116,7 @@ def test_process_writes(
 
         def write():
             nonlocal results
-            results = run_workers(pool, database_file, chunks, "write")
+            results = _processes.run_workers(pool, database_file, chunks, "write")
 
         def verify():
             _verify_reads(results, chunks, len(entries))
@@ -131,7 +137,7 @@ def test_process_writes(
             else:
                 failure = (
                     "lost or incorrect persisted updates"
-                    if persisted != dict(updates)
+                    if persisted != expected
                     else ""
                 )
             if failure:
