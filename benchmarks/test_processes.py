@@ -30,6 +30,14 @@ def test_process_reads(
     processes: int,
     mode: str,
 ) -> None:
+    """Measure a fixed total of API key lookups split across spawned processes.
+
+    Each process reads the shared file through independent API state. Time
+    api.load in load-and-read mode; preload outside timing in resident-read mode.
+    Both include api.get, api.count, synchronization and result communication,
+    which can dominate small workloads. Startup and checks of values, counts,
+    worker IDs and the unchanged file are untimed. The OS may cache the file.
+    """
     # Seed the fixture outside timing without depending on storage internals.
     database_file.write_text(json.dumps(dict(entries)), encoding="utf-8")
     original = database_file.read_bytes()
@@ -84,6 +92,15 @@ def test_process_writes(
     processes: int,
     request,
 ) -> None:
+    """Probe unsupported concurrent API writes to a shared temporary file.
+
+    With --multiprocess-writes, split up to 100 disjoint updates across processes.
+    Time API loading, synchronization, api.set (persisting each write), local
+    readback, counts and result communication. Startup, fixture resets and raw
+    JSON verification are untimed. A single writer must pass; known concurrent
+    persistence failures produce XFAIL and failure metadata. Failed timings are
+    not valid throughput, and passing rounds do not establish process safety.
+    """
     if not request.config.getoption("--multiprocess-writes"):
         pytest.skip(
             "opt in with --multiprocess-writes; concurrent writes may lose data"

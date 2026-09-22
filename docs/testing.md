@@ -31,5 +31,5 @@ From the repository root, run the benchmark suite with compact output and saved 
 uv run --locked --group benchmark -m benchmarks
 ```
 
-See the [benchmark guide](../benchmarks/README.md) for all scenarios, implementation details,
-datasets, command options, correctness checks and guidance on comparing results.
+See the [benchmark guide](../benchmarks/README.md) for run instructions and guidance on
+comparing results. Individual benchmark functions document their workloads and timing boundaries.
