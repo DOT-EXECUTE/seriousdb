@@ -11,6 +11,7 @@ from benchmarks._processes import process_pool, run_workers
 from benchmarks._support import make_entries
 from seriousdb import api
 from seriousdb.exceptions import ResourceNotFoundError
+from seriousdb.cache import Cache
 
 
 @pytest.mark.parametrize("mode", ["load-and-read", "resident-read"])
@@ -78,7 +79,10 @@ def test_single_process_write_probe_persists_all_updates(tmp_path):
             [value for _, value in chunk] for chunk in chunks
         ]
 
-    assert json.loads(path.read_bytes()) == dict(updates)
+    reloaded = Cache()
+    reloaded.load(str(path))
+
+    assert reloaded.db == dict(updates)
 
 
 @pytest.mark.parametrize("winerror", [5, 32, 33])
