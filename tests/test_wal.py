@@ -100,3 +100,18 @@ def test_clear_on_nonexistent_file_creates_empty_file(tmp_path):
 
     assert wal_path.exists()
     assert wal.replay() == []
+
+
+def test_append_repairs_leftover_bytes_from_a_previous_failed_write(wal, wal_path):
+    wal.append({"op": "set", "key": "a", "value": "1"})
+
+    # Simulate a write that raised before finishing
+    with open(wal_path, "ab") as f:
+        f.write(b'{"op": "set", "key": "b')
+
+    wal.append({"op": "set", "key": "c", "value": "3"})
+
+    assert wal.replay() == [
+        {"op": "set", "key": "a", "value": "1"},
+        {"op": "set", "key": "c", "value": "3"},
+    ]

@@ -296,7 +296,11 @@ class Cache:
             tmp_file.write(json.dumps(self.db).encode())
             tmp_file.flush()
             os.fsync(tmp_file.fileno())
-        os.replace(tmp_file.name, self.filename)
+        try:
+            os.replace(tmp_file.name, self.filename)
+        except OSError:
+            os.unlink(tmp_file.name)
+            raise
         logger.info("Compacted database into %s", self.filename)
 
         if self.wal is not None:

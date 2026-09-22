@@ -26,6 +26,7 @@ class WriteAheadLog:
 
     def __init__(self, filename: str):
         self.filename = filename
+        self._offset = os.path.getsize(filename) if os.path.isfile(filename) else 0
 
     def append(self, op: dict) -> None:
         """Append `op` to the log and fsync it.
@@ -40,10 +41,30 @@ class WriteAheadLog:
         OSError
             If the log file cannot be written.
         """
+        self._repair_torn_tail()
         with open(self.filename, "ab") as f:
-            f.write((json.dumps(op) + "\n").encode())
+            data = (json.dumps(op) + "\n").encode()
+            f.write(data)
             f.flush()
             os.fsync(f.fileno())
+        self._offset += len(data)
+
+    def _repair_torn_tail(self) -> None:
+        """Truncate any bytes left by a previous failed write.
+
+        A prior `append()` call may have written partial bytes before
+        raising, leaving the file longer than the last completed entry.
+        Repairing here, before the next append, prevents new entries from
+        being concatenated onto that leftover, not just after a crash and restart,
+        but during long-running process too.
+        """
+        if not os.path.isfile(self.filename):
+            self._offset = 0
+            return
+        actual_size = os.path.getsize(self.filename)
+        if actual_size > self._offset:
+            with open(self.filename, "r+b") as f:
+                f.truncate(self._offset)
 
     def replay(self) -> list[dict]:
         """Return every entry durably written to the log, oldest first.
@@ -97,6 +118,7 @@ class WriteAheadLog:
             with open(self.filename, "r+b") as f:
                 f.truncate(good_offset)
 
+        self._offset = good_offset
         return entries
 
     def clear(self) -> None:
@@ -110,4 +132,9 @@ class WriteAheadLog:
         dir_name = os.path.dirname(self.filename) or "."
         with tempfile.NamedTemporaryFile("wb", dir=dir_name, delete=False) as tmp_file:
             pass
-        os.replace(tmp_file.name, self.filename)
+        try:
+            os.replace(tmp_file.name, self.filename)
+        except OSError:
+            os.unlink(tmp_file.name)
+            raise
+        self._offset = 0
