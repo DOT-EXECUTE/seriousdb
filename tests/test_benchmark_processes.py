@@ -10,8 +10,8 @@ from benchmarks import _processes
 from benchmarks._processes import process_pool, run_workers
 from benchmarks._support import make_entries
 from seriousdb import api
-from seriousdb.exceptions import ResourceNotFoundError
 from seriousdb.cache import Cache
+from seriousdb.exceptions import ResourceNotFoundError
 
 
 @pytest.mark.parametrize("mode", ["load-and-read", "resident-read"])
