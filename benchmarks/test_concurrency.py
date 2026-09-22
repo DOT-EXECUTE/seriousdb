@@ -71,6 +71,7 @@ def test_shared_cache_threads(
     # Pool startup is excluded so the samples focus on scheduling work and on
     # contention inside one shared Cache rather than thread construction.
     with ThreadPoolExecutor(max_workers=workers) as executor:
+
         def run_threads():
             """Submit all chunks, wait for completion, and collect read results."""
             nonlocal values
