@@ -208,8 +208,9 @@ class Cache:
                     self.db = _write_default(filename)
             self.filename = filename
             self.wal = WriteAheadLog(f"{filename}.wal")
-            self._writes_since_compact = 0
-            for op in self.wal.replay():
+            replayed = self.wal.replay()
+            self._writes_since_compact = len(replayed)
+            for op in replayed:
                 self._apply_op(op)
 
     def flush(self) -> None:

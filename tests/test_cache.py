@@ -463,3 +463,26 @@ def test_load_corrupt_backup_with_existing_collision_suffixes(db_path, monkeypat
 
     assert cache.db == {}
     assert json.loads(db_path.read_bytes()) == {}
+
+
+def test_compaction_threshold_counts_replayed_writes_across_restart(db_path):
+    """Writes recovered by replay must still count toward the next compaction threshold, the counter shouldn't
+    reset to zero just because the process restarted.
+    """
+    cache = Cache()
+    cache.load(str(db_path))
+    for i in range(COMPACTION_THRESHOLD - 1):
+        cache.insert(f"key_{i}", f"value_{i}")
+
+    reloaded = Cache()
+    reloaded.load(str(db_path))
+
+    reloaded.insert("one_more", "value")
+
+    with open(db_path, "rb") as f:
+        on_disk = json.loads(f.read().decode())
+    assert len(on_disk) == COMPACTION_THRESHOLD
+
+    assert reloaded.wal is not None
+    with open(reloaded.wal.filename, "rb") as f:
+        assert f.read() == b""
