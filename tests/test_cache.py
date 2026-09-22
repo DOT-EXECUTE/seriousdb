@@ -376,3 +376,90 @@ def test_replay_repairs_torn_wal_before_later_appends(db_path):
     final.load(str(db_path))
 
     assert final.db == {"a": "1", "c": "3"}
+
+
+def boom(*args, **kwargs):
+    raise RuntimeError("simulated crash mid-compact")
+
+
+def test_compact_failure_does_not_corrupt_existing_snapshot(db_path, monkeypatch):
+    """A failed compaction must not corrupt the snapshot file already on disk."""
+    cache = Cache()
+    cache.load(str(db_path))
+    cache.insert("name", "Alice")
+    cache._compact()
+    original_content = db_path.read_bytes()
+
+    cache.insert("name", "Bob")
+
+    monkeypatch.setattr(json, "dumps", boom)
+
+    with pytest.raises(RuntimeError):
+        cache._compact()
+
+    assert db_path.read_bytes() == original_content
+
+
+def test_load_corrupt_backup_collision_preserves_backups(db_path, monkeypatch):
+    """Recovering from corruption twice with the same timestamp keeps both backups."""
+    first_payload = b"FIRST_CORRUPT_PAYLOAD"
+    second_payload = b"SECOND_CORRUPT_PAYLOAD"
+
+    db_path.write_bytes(first_payload)
+
+    fixed_timestamp = 1700000000.0
+    monkeypatch.setattr("seriousdb.cache.time.time", lambda: fixed_timestamp)
+
+    cache = Cache()
+    cache.load(str(db_path))
+
+    db_path.write_bytes(second_payload)
+
+    cache.load(str(db_path))
+
+    backup_1 = db_path.parent / f"{db_path.name}.corrupt-{int(fixed_timestamp)}"
+    backup_2 = db_path.parent / f"{db_path.name}.corrupt-{int(fixed_timestamp)}-1"
+
+    assert backup_1.exists()
+    assert backup_2.exists()
+    assert backup_1.read_bytes() == first_payload
+    assert backup_2.read_bytes() == second_payload
+
+    assert cache.db == {}
+    assert json.loads(db_path.read_bytes()) == {}
+
+    cache.insert("test_key", "test_val")
+
+    reloaded = Cache()
+    reloaded.load(str(db_path))
+    assert reloaded.db == {"test_key": "test_val"}
+
+
+def test_load_corrupt_backup_with_existing_collision_suffixes(db_path, monkeypatch):
+    """Recovery picks the next free numeric suffix when earlier ones exist."""
+    fixed_timestamp = 1700000000.0
+    monkeypatch.setattr("seriousdb.cache.time.time", lambda: fixed_timestamp)
+
+    existing_backups = [
+        db_path.parent / f"{db_path.name}.corrupt-{int(fixed_timestamp)}",
+        db_path.parent / f"{db_path.name}.corrupt-{int(fixed_timestamp)}-1",
+        db_path.parent / f"{db_path.name}.corrupt-{int(fixed_timestamp)}-2",
+    ]
+    for i, backup in enumerate(existing_backups):
+        backup.write_bytes(f"EXISTING_PAYLOAD_{i}".encode())
+
+    third_payload = b"THIRD_CORRUPT_PAYLOAD"
+    db_path.write_bytes(third_payload)
+
+    cache = Cache()
+    cache.load(str(db_path))
+
+    new_backup = db_path.parent / f"{db_path.name}.corrupt-{int(fixed_timestamp)}-3"
+    assert new_backup.exists()
+    assert new_backup.read_bytes() == third_payload
+
+    for i, backup in enumerate(existing_backups):
+        assert backup.read_bytes() == f"EXISTING_PAYLOAD_{i}".encode()
+
+    assert cache.db == {}
+    assert json.loads(db_path.read_bytes()) == {}
