@@ -38,13 +38,14 @@ def load(filename: str | Path = DB_FILE) -> None:
 
     Parameters
     ----------
-    filename : str or Path, optional Path of the database file.
+    filename : str or Path, optional
+        Path of the database file.
         Default to :data:`~seriousdb.config.DB_FILE`.
 
     Raises
     ------
     OSError
-        if the file cannot be read, renamed or written.
+        If the file cannot be read, renamed or written.
     """
     cache.load(str(filename))
 
@@ -73,11 +74,11 @@ def _ensure_loaded() -> None:
 def get(key: str) -> str:
     """Return the value stored under `key`.
 
-    the database file is loaded automatically on first use.
+    The database file is loaded automatically on first use.
 
     Parameters
     ----------
-    key: str
+    key : str
         Key to look up.
 
     Returns
@@ -90,7 +91,7 @@ def get(key: str) -> str:
     ResourceNotFoundError
         If `key` does not exist.
     OSError
-        If the database file cannont be loaded.
+        If the database file cannot be loaded.
     """
     _ensure_loaded()
     return cache.select(key)
@@ -103,10 +104,10 @@ def set(key: str, value: str) -> str:
 
     Parameters
     ----------
-    key: str
+    key : str
         Key to store the value under.
-    value: str
-        Value to store
+    value : str
+        Value to store.
 
     Returns
     -------
@@ -116,7 +117,7 @@ def set(key: str, value: str) -> str:
     Raises
     ------
     OSError
-        If the database file cannont be loaded or written.
+        If the database file cannot be loaded or written.
     """
     _ensure_loaded()
     value, _ = cache.insert(key, value)
@@ -155,12 +156,12 @@ def delete(key: str) -> str:
 def exists(key: str) -> bool:
     """Return whether `key` exists in the database.
 
-    the database file is loaded automatically on first use.
+    The database file is loaded automatically on first use.
 
     Parameters
     ----------
     key : str
-        Key to remove.
+        Key to look up.
 
     Returns
     -------
@@ -175,7 +176,7 @@ def exists(key: str) -> bool:
 def get_all() -> dict[str, str]:
     """Return a snapshot of every key-value pair in the database.
 
-    the database file is loaded automatically on first use.
+    The database file is loaded automatically on first use.
 
     Returns
     -------
@@ -185,7 +186,7 @@ def get_all() -> dict[str, str]:
     Raises
     ------
     OSError
-        If the database file cannont be loaded.
+        If the database file cannot be loaded.
     """
     _ensure_loaded()
     with cache.lock:
@@ -196,12 +197,12 @@ def get_bulk(keys: Iterable[str]) -> dict[str, str]:
     """Return the values stored under multiple keys.
 
     Keys that do not exist are omitted from the result.
-    the database file is loaded automatically on first use.
+    The database file is loaded automatically on first use.
 
     Parameters
     ----------
-    keys: Iterable of str
-        Keys to lookup.
+    keys : Iterable of str
+        Keys to look up.
 
     Returns
     -------
@@ -211,7 +212,7 @@ def get_bulk(keys: Iterable[str]) -> dict[str, str]:
     Raises
     ------
     OSError
-        If the database file cannont be loaded.
+        If the database file cannot be loaded.
     """
     _ensure_loaded()
     with cache.lock:
@@ -220,19 +221,19 @@ def get_bulk(keys: Iterable[str]) -> dict[str, str]:
 
 
 def count() -> int:
-    """Return the number of key-value pairs int the database.
+    """Return the number of key-value pairs in the database.
 
-    the database file is loaded automatically on first use.
+    The database file is loaded automatically on first use.
 
     Returns
     -------
     int
-        The number of stored key-value pairs
+        The number of stored key-value pairs.
 
     Raises
     ------
     OSError
-        If the database file cannont be loaded.
+        If the database file cannot be loaded.
     """
     _ensure_loaded()
     with cache.lock:

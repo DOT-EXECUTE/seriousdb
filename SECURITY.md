@@ -8,8 +8,10 @@ appreciate your efforts to responsibly disclose any vulnerabilities you find.
 Only the latest code on the `main` branch and the most recent release receive active security
 updates.
 
-| Version | Supported | | ------- | ------------------ | | `main` | :white_check_mark: | | < 0.1 |
-:x: |
+| Version | Supported          |
+| ------- | ------------------ |
+| `main`  | :white_check_mark: |
+| < 0.1   | :x:                |
 
 ## Reporting a Vulnerability
 

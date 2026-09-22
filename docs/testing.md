@@ -31,12 +31,11 @@ with one unrecorded warmup and five measured rounds. Default datasets are 100 an
 32-byte values.
 
 | File in `benchmarks/` | Timed work |
-|-----------------------|--------------------------------------------------------------------------------------------|
-| `test_persistence.py` | Batch insert and persist; flush; overwrite 100 keys, flushing each write
-or once per batch | | `test_reads.py` | Load and read every key; load only; reads from a loaded
-cache | | `test_workloads.py` | Shuffled 90% reads / 10% overwrites in memory | |
-`test_concurrency.py` | The same mixed workload split across 1, 2, 4 or 8 threads sharing one cache
-|
+| --- | --- |
+| `test_persistence.py` | Batch insert and persist; flush; overwrite 100 keys, flushing each write or once per batch |
+| `test_reads.py` | Load and read every key; load only; reads from a loaded cache |
+| `test_workloads.py` | Shuffled 90% reads / 10% overwrites in memory |
+| `test_concurrency.py` | The same mixed workload split across 1, 2, 4 or 8 threads sharing one cache |
 
 Setup and correctness checks are outside timing, using temporary files. Mutating workloads reset
 each round; flush rounds change a cached value before timing. Every round's read results and
