@@ -50,10 +50,9 @@ uv run --locked --group benchmark pytest-benchmark compare
 
 ## Interpret results
 
-Compare matching workloads, datasets and worker counts on the same idle machine,
-Python version and storage. Check revision and persistence semantics, and start a
-new baseline when the workload version changes. Use the median and spread rather
-than the fastest sample. OPS counts complete scenarios per second, not individual
-reads or writes. OS caching and process communication can affect results; consult
-the benchmark docstrings for what each timing includes. CI checks correctness
-without performance thresholds; performance history stays local.
+Compare matching workloads, datasets and worker counts on the same idle machine, Python version and
+storage. Check revision and persistence semantics, and start a new baseline when the workload
+version changes. Use the median and spread rather than the fastest sample. OPS counts complete
+scenarios per second, not individual reads or writes. OS caching and process communication can
+affect results; consult the benchmark docstrings for what each timing includes. CI checks
+correctness without performance thresholds; performance history stays local.
