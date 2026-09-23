@@ -11,6 +11,19 @@ def boom(*args, **kwargs):
     raise RuntimeError("simulated crash mid-flush")
 
 
+def test_write_default_failure_does_not_create_destination(
+    tmp_path: Path, monkeypatch: MonkeyPatch
+):
+    db_file = tmp_path / ".sdb"
+    monkeypatch.setattr(json, "dumps", boom)
+
+    cache = Cache()
+    with pytest.raises(RuntimeError):
+        cache.load(str(db_file))
+
+    assert not db_file.exists()
+
+
 def test_flush_failure_does_not_corrupt_existing_file(
     tmp_path: Path, monkeypatch: MonkeyPatch
 ):
