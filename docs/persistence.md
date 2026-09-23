@@ -1,27 +1,24 @@
 # Persistence
 
-By default, data is stored in `.sdb` in the process working directory. Set `SERIOUSDB_DB_FILE`
-before importing the package to use a different path; see [configuration](configuration.md).
+Data is stored in a local file named `.sdb` in the process working directory, alongside a write-ahead log file named `.sdb.wal`
 
-The file contains a JSON object. Loading a missing file creates an empty database (`{}`). Reads use
-the in-memory dictionary without reloading changes from disk.
+The `.sdb` file contains a serialized Python dictionary written with the standard-library `json` module. On first startup, the application creates it with:
+
+```json
+{}
+```
 
 The [architecture guide](architecture.md#call-flow) shows when the API loads and writes its cache.
-Direct `Cache` mutations require an explicit `flush()`.
+Direct `Cache` mutations (such as `insert` and `delete`) are persisted immediately to disk via the WAL. As a result, explicitly calling `flush()` is no longer required and acts as a no-op for backward compatibility.
 
-If a file contains invalid UTF-8, invalid JSON, or a JSON value other than an object, loading moves
-it to `<filename>.corrupt-<unix timestamp>` (appending a numeric suffix like `-1`, `-2` if that path
-already exists), logs a warning, and creates a new empty database. File access errors such as
-permission failures can still prevent loading.
+The database is loaded into memory once at startup. Each write (`PUT` or `DELETE`) updates the in-memory dictionary and immediately appends a record of the change to `.sdb.wal`, which is flushed and fsynced before the request completes, so a write is durable the moment it succeeds, even if the process crashes immediately after.
+
+The `.sdb` file itself is not rewritten on every write. Instead, once a fixed number of writes have accumulated in the WAL (see `COMPACTION_THRESHOLD` in `cache.py`), the current in-memory state is written atomically (via a temporary file and rename), so an interruption during compaction leaves either the previous snapshot with its WAL intact, or the new snapshot with an empty WAL, and never a partially written or corrupted file.
+
+On startup, `.sdb` is loaded first, then any entries remaining in `.sdb.wal` are replayed on top of it, recovering writes made since the last compaction. If the WAL's last entry is incomplete (if for example the process with interrupted mid-write), replay stops at that entry and everything recorded before it is still recovered
 
 ## Current constraints
 
-- The full database must fit in memory, and each flush rewrites the entire file.
-- A lock coordinates operations and flushes on one cache within a process. Sequences of operations
-  are not transactions.
-- Separate `Cache` instances and separate processes have independent data and locks. Concurrent
-  writes to the same file from more than one of them are not coordinated and can overwrite each
-  other's changes.
-- Each flush writes to a temp file in the same directory, then calls `fsync` on it and finally
-  replaces the database with `os.replace`. A crash leaves either the old or the new file. A failed
-  flush does not roll back the in memory change and can leave the temporary file behind.
+- Both files are local to the machine running the server.
+- Requests use the complete in-memory dictionary rather than a database engine.
+- Concurrent writes and multi-process access to the same `.sdb`/`.sdb.wal` pair are not currently coordinated. The in-process lock only protects multiple threads within a single running server.

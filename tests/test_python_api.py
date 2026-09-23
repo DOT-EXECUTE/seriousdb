@@ -6,6 +6,7 @@ import pytest
 from pytest import MonkeyPatch
 
 from seriousdb import api
+from seriousdb.cache import Cache
 from seriousdb.exceptions import ResourceNotFoundError
 
 
@@ -108,8 +109,11 @@ def test_count_decreases_after_deleting_key(db_file):
 def test_set_persists_value_to_database_file(db_file):
     api.set("name", "Alice")
 
-    with open(db_file) as f:
-        assert json.load(f) == {"name": "Alice"}
+    reloaded = Cache()
+    reloaded.load(str(db_file))
+    with reloaded.lock:
+        assert reloaded.db is not None
+        assert reloaded.db["name"] == "Alice"
 
 
 def test_delete_persists_removal_to_database_file(db_file):

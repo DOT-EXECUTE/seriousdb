@@ -233,21 +233,24 @@ def test_process_api_writes_bound_work_and_preserve_other_keys(
 @pytest.mark.parametrize(
     ("bad_call", "disabled"), [(1, False), (2, False), (3, False), (1, True)]
 )
-def test_every_flush_round_requires_a_write(tmp_path, monkeypatch, bad_call, disabled):
+def test_every_wal_write_requires_persistence(
+    tmp_path, monkeypatch, bad_call, disabled
+):
     path = tmp_path / "benchmark.json"
     entries = make_entries(100, 32)
     write_database(path, entries)
     cache = load_cache(str(path))
-    original = cache.flush
+    assert cache.wal is not None
+    original = cache.wal.append
     calls = 0
 
-    def sometimes_noop():
+    def sometimes_noop(op):
         nonlocal calls
         calls += 1
         if calls != bad_call:
-            original()
+            original(op)
 
-    monkeypatch.setattr(cache, "flush", sometimes_noop)
+    monkeypatch.setattr(cache.wal, "append", sometimes_noop)
     with pytest.raises(AssertionError):
         test_persistence.test_flush(Rounds(disabled), cache, path, entries, 3)
     assert calls == bad_call

@@ -1,8 +1,10 @@
-"""In-memory key-value cache backed by a JSON file.
+"""In-memory key-value cache backed by a JSON file and a write-ahead log.
 
-The whole database is held in memory as a ``dict`` and written back to disk
-with :meth:`Cache.flush`. All access to the data is guarded by a lock, so a
-single :class:`Cache` can be shared between request handlers.
+The whole database is held in memory as a ``dict``. Writes are durably
+appended to a :class:`~seriousdb.wal.WriteAheadLog` before returning, and periodically
+compacted into the full JSON snapshot file (see :data:`COMPACTION_THRESHOLD`).
+All access to the data is guarded by a lock, so a single :class:`Cache` can
+be shared between request handlers.
 """
 
 import json
@@ -13,10 +15,12 @@ import time
 from threading import Lock
 
 from .exceptions import ResourceNotFoundError, ServiceUnavailableError
+from .wal import DeleteEntry, SetEntry, WalEntry, WriteAheadLog
 
 logger = logging.getLogger(__name__)
 
 DEFAULT_DB = {}
+COMPACTION_THRESHOLD = 50
 
 
 class Cache:
@@ -30,21 +34,30 @@ class Cache:
     ----------
     filename : str or None
         Path of the database file, or ``None`` if nothing has been loaded.
+    wal: WriteAheadLog or None
+        The write-ahead log backing this cache, or `None` if nothing has been loaded.
     db : dict of str to str or None
         The stored key-value pairs, or ``None`` if nothing has been loaded.
     lock : threading.Lock
         Lock that must be held while reading or changing `db`.
+    _writes_since_compact : int
+        Counter for number of writes since last compaction.
     """
 
     def __init__(self):
         self.filename: str | None = None
+        self.wal: WriteAheadLog | None = None
         self.db: dict[str, str] | None = None
         self.lock = Lock()
+        self._writes_since_compact: int = 0
 
     def insert(self, key: str, value: str) -> tuple[str, bool]:
         """Store `value` under `key`, replacing any existing value.
 
-        The change is only kept in memory; call :meth:`flush` to persist it.
+        The change is appended to the write-ahead log (WAL) and must succeed there before
+        it is applied in memory, so a failed write never leaves the live cache disagreeing
+        with what is durable. The full database snapshot file is only rewritten periodically,
+        by :meth:`_compact`.
 
         Parameters
         ----------
@@ -65,11 +78,15 @@ class Cache:
         ------
         ServiceUnavailableError
             If no database has been loaded.
+        OSError
+            If the write-ahead log cannot be written. `self.db` is left unchanged in this case.
         """
         with self.lock:
             db = require_db(self)
             is_new_key = key not in db
+            self._record_write(SetEntry(key=key, value=value))
             db[key] = value
+            self._safe_maybe_compact()
         return value, is_new_key
 
     def select(self, key: str) -> str:
@@ -102,7 +119,10 @@ class Cache:
     def delete(self, key: str) -> str:
         """Remove `key` and return the value it had.
 
-        The change is only kept in memory; call :meth:`flush` to persist it.
+        If `key` exists, its removal is appended to the write-ahead log (WAL) and
+        must succeed there before it is applied in memory, so a failed write never
+        leaves the live cache disagreeing with what is durable.
+
 
         Parameters
         ----------
@@ -120,9 +140,16 @@ class Cache:
             If `key` does not exist.
         ServiceUnavailableError
             If no database has been loaded.
+        OSError
+            If the write-ahead log cannot be written. `self.db` is left unchanged in this case.
         """
         with self.lock:
-            val = require_db(self).pop(key, None)
+            db = require_db(self)
+            val = db.get(key, None)
+            if val is not None:
+                self._record_write(DeleteEntry(key=key))
+                db.pop(key, None)
+                self._safe_maybe_compact()
         if val is None:
             logger.debug("Key not found: %s", key)
             raise ResourceNotFoundError(f"No value set for key {key}")
@@ -133,10 +160,14 @@ class Cache:
 
         If the file does not exist, it is created with an empty database.
         If it is not valid UTF-8 JSON or does not contain a JSON object, it is
-        renamed to ``<filename>.corrupt-<unix timestamp>``. If that backup
-        already exists, a numeric suffix is appended (such as ``-1``, ``-2``,
-        etc.) to avoid overwriting it. A warning is logged, and a new file with
-        an empty database is created in its place.
+        renamed to ``<filename>.corrupt-<unix timestamp>``. If that backup already
+        exists, a numeric suffix is appended (such as ``-1``, ``-2``, etc) to avoid overwriting it.
+        A warning is logged, and a new file with an empty database is created in its
+        place.
+
+        After the snapshot is loaded, any entries in the write-ahead log
+        (``<filename>.wal``) are replayed on top of it, recovering writes
+        that happened after the last compaction.
 
         Parameters
         ----------
@@ -176,38 +207,115 @@ class Cache:
                     )
                     self.db = _write_default(filename)
             self.filename = filename
+            self.wal = WriteAheadLog(f"{filename}.wal")
+            replayed = self.wal.replay()
+            self._writes_since_compact = len(replayed)
+            for entry in replayed:
+                entry.apply(require_db(self))
 
     def flush(self) -> None:
-        """Write the current data to the database file.
+        """No-op, kept for backward compatibility.
 
-        The file is overwritten with the full database. Does nothing if no
-        database has been loaded.
+        Durability is now handled per-write via the write-ahead log (see
+        :attr:`wal`), so nothing needs to happen here. This method
+        exists so that call keeps working without change.
+        """
+        return
+
+    # ------ Write-ahead log orchestration -----------------------------------------#
+
+    def _record_write(self, entry: WalEntry) -> None:
+        """Append `entry` to the write-ahead log and bump the write counter.
+
+        Must be called, and must succeed, before `entry` is applied to `self.db`,
+        a failed append must never leave memory and the log disagreeing about
+        what happened.
+
+        Parameters
+        ----------
+        entry : WalEntry
+                    The entry to append.
 
         Raises
         ------
         OSError
-            If the file cannot be written.
+            If the write-ahead log cannot be written.
         """
-        with self.lock:
-            if self.db is None or self.filename is None:
-                logger.error("Cannot flush database: database is not loaded")
-                return
-            _atomic_write_json(self.filename, self.db)
+        require_wal(self).append(entry)
+        self._writes_since_compact += 1
+
+    def _safe_maybe_compact(self) -> None:
+        """Compact if due, isolating a compaction failure from the caller.
+
+        Called after a write has already been durably appended to the
+        write-ahead log, so the write itself is safe regardless of whether
+        compaction succeeds, a compaction failure must not make the
+        write that triggered it look like it failed too.
+        """
+        try:
+            if self._writes_since_compact >= COMPACTION_THRESHOLD:
+                self._compact()
+        except OSError as e:
+            logger.error(
+                "Compaction failed after durable write to %s: %s", self.filename, e
+            )
+
+    def _compact(self) -> None:
+        """Write `self.db` to `self.filename` and clear the write-ahead log.
+
+        Both the snapshot and the emptied WAL are written atomically via a temporary
+        file and `os.replace`, in that order, so a crash at any point during compaction
+        leaves either the old snapshot with a non-empty WAL, or the new snapshot with an
+        empty WAL, and never a lost or corrupted state. Replaying the same WAL entry twice is harmless,
+        since ``set``/``delete`` are overlayable.
+
+        Raises
+        ------
+        OSError
+            If the temporary or final files cannot be written.
+        """
+        if self.db is None or self.filename is None:
+            return
+
+        _atomic_write_json(self.filename, self.db)
+        logger.info("Compacted database into %s", self.filename)
+
+        if self.wal is not None:
+            self.wal.clear()
+
+        self._writes_since_compact = 0
 
 
 def _atomic_write_json(filename: str, data: dict[str, str]) -> None:
-    dir_name: str = os.path.dirname(filename) or "."
+    """Write `data` to `filename` atomically, via a temp file and `os.replace`.
+
+    Cleans up the temporary file if `os.replace` fails, rather than
+    leaving it behind in the destination directory.
+
+    Raises
+    ------
+    OSError
+        If the temporary or final files cannot be written.
+    """
+    dir_name = os.path.dirname(filename) or "."
     with tempfile.NamedTemporaryFile("wb", dir=dir_name, delete=False) as tmp_file:
-        tmp_file.write(json.dumps(data).encode())
-        tmp_file.flush()
-        os.fsync(tmp_file.fileno())
-    os.replace(tmp_file.name, filename)
+        try:
+            tmp_file.write(json.dumps(data).encode())
+            tmp_file.flush()
+            os.fsync(tmp_file.fileno())
+        except Exception:
+            os.unlink(tmp_file.name)
+            raise
+    try:
+        os.replace(tmp_file.name, filename)
+    except OSError:
+        os.unlink(tmp_file.name)
+        raise
 
 
 def _write_default(filename: str) -> dict[str, str]:
-    db = dict(DEFAULT_DB)
-    _atomic_write_json(filename, db)
-    return db
+    _atomic_write_json(filename, DEFAULT_DB)
+    return dict(DEFAULT_DB)
 
 
 def _generate_corrupt_backup_path(filename: str) -> str:
@@ -264,3 +372,32 @@ def require_db(cache: Cache) -> dict[str, str]:
         )
 
     return cache.db
+
+
+def require_wal(cache: Cache) -> WriteAheadLog:
+    """Return the write-ahead log of `cache`.
+
+    The caller must hold ``cache.lock`` while using the returned log.
+
+    Parameters
+    ----------
+    cache : Cache
+        Cache to read the write-ahead log from.
+
+    Returns
+    -------
+    WriteAheadLog
+        The cache's write-ahead log.
+
+    Raises
+    ------
+    ServiceUnavailableError
+        If `cache` has no database loaded.
+    """
+    if cache.wal is None:
+        logger.error("Write-ahead log unavailable: %s", cache.filename)
+        raise ServiceUnavailableError(
+            f"Database file {cache.filename} could not be opened and loaded"
+        )
+
+    return cache.wal

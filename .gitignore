@@ -219,4 +219,5 @@ __marimo__/
 .streamlit/secrets.toml
 
 # Database
-.sdb
+*.sdb
+*.sdb.wal

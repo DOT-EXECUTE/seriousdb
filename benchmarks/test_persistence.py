@@ -48,7 +48,7 @@ def test_batch_write_and_persist(
     benchmark.extra_info["file_bytes"] = database_file.stat().st_size
 
 
-@pytest.mark.benchmark(group="seriousdb-flush")
+@pytest.mark.benchmark(group="seriousdb-insert")
 def test_flush(
     benchmark,
     loaded_cache: Cache,
@@ -56,29 +56,26 @@ def test_flush(
     entries: Entries,
     measured_rounds: int,
 ) -> None:
-    """Measure only Cache.flush on an already populated cache.
-
-    Change one value before each round and verify the reopened file afterward,
-    both outside timing. Flush includes serialization, fsync and file replacement.
-    """
+    """Measure appending one write to the write-ahead log."""
     expected = dict(entries)
     changed_key = entries[0][0]
 
-    def prepare_flush():
-        """Change one value outside timing so flush has new state to persist."""
+    def prepare_write():
+        """Change one value outside timing so there's new state to write."""
         # Keeping the value the same size avoids changing the workload each round.
         expected[changed_key] = expected[changed_key][::-1]
+
+    def do_write():
         loaded_cache.insert(changed_key, expected[changed_key])
 
     def verify():
-        """Reopen the file outside timing and check the changed value arrived."""
+        """Reopen the database so verification cannot pass from cached state alone."""
         verify_persisted(database_file, tuple(expected.items()))
 
-    benchmark.extra_info["persistence"] = "Cache.flush without fsync"
-    # Only loaded_cache.flush is timed; mutation and disk verification are not.
+    benchmark.extra_info["persistence"] = "Cache.insert (WAL append + fsync)"
     benchmark.pedantic(
-        loaded_cache.flush,
-        setup=prepare_flush,
+        do_write,
+        setup=prepare_write,
         teardown=verify,
         rounds=measured_rounds,
         warmup_rounds=WARMUP_ROUNDS,
