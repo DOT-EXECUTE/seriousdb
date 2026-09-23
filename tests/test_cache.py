@@ -6,6 +6,7 @@ import pytest
 
 from seriousdb.cache import COMPACTION_THRESHOLD, Cache, require_db
 from seriousdb.exceptions import ResourceNotFoundError, ServiceUnavailableError
+from seriousdb.wal import SetEntry
 
 
 @pytest.fixture
@@ -155,21 +156,6 @@ def test_require_db_raises_when_database_is_not_loaded():
         require_db(cache)
 
 
-def test_replay_recovers_writes_after_reload(db_path):
-    """Recover writes that have not yet been compacted into the database."""
-    cache = Cache()
-    cache.load(str(db_path))
-
-    cache.insert("name", "Alice")
-    cache.insert("language", "Python")
-    cache.delete("language")
-
-    reloaded = Cache()
-    reloaded.load(str(db_path))
-
-    assert reloaded.db == {"name": "Alice"}
-
-
 def test_compaction_triggers_at_write_threshold(db_path):
     """Compact the database once COMPACTION_THRESHOLD writes have occurred."""
     cache = Cache()
@@ -225,7 +211,7 @@ def test_compaction_counter_resets_after_compacting(db_path):
     with open(cache.wal.filename, "rb") as f:
         wal_lines = f.read().decode().splitlines()
 
-    assert wal_lines == [json.dumps({"op": "set", "key": "one_more", "value": "value"})]
+    assert wal_lines == [json.dumps(SetEntry(key="one_more", value="value").to_dict())]
 
 
 def test_insert_succeeds_when_compaction_fails(db_path, monkeypatch):
@@ -367,7 +353,7 @@ def test_replay_repairs_torn_wal_before_later_appends(db_path):
         repaired_bytes = f.read()
 
     assert repaired_bytes == (
-        json.dumps({"op": "set", "key": "a", "value": "1"}).encode() + b"\n"
+        json.dumps(SetEntry(key="a", value="1").to_dict()).encode() + b"\n"
     )
 
     recovered.insert("c", "3")

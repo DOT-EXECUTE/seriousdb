@@ -4,7 +4,7 @@ import json
 
 import pytest
 
-from seriousdb.wal import WriteAheadLog
+from seriousdb.wal import DeleteEntry, SetEntry, WriteAheadLog
 
 
 @pytest.fixture
@@ -22,31 +22,31 @@ def test_replay_on_missing_file_returns_empty_list(wal):
 
 
 def test_append_then_replay_returns_entries_in_order(wal):
-    wal.append({"op": "set", "key": "a", "value": "1"})
-    wal.append({"op": "set", "key": "b", "value": "2"})
-    wal.append({"op": "delete", "key": "a"})
+    wal.append(SetEntry(key="a", value="1"))
+    wal.append(SetEntry(key="b", value="2"))
+    wal.append(DeleteEntry(key="a"))
 
     assert wal.replay() == [
-        {"op": "set", "key": "a", "value": "1"},
-        {"op": "set", "key": "b", "value": "2"},
-        {"op": "delete", "key": "a"},
+        SetEntry(key="a", value="1"),
+        SetEntry(key="b", value="2"),
+        DeleteEntry(key="a"),
     ]
 
 
 def test_append_writes_one_json_line_per_entry(wal, wal_path):
-    wal.append({"op": "set", "key": "a", "value": "1"})
+    wal.append(SetEntry(key="a", value="1"))
 
     with open(wal_path, "rb") as f:
         content = f.read()
 
     assert (
-        content == json.dumps({"op": "set", "key": "a", "value": "1"}).encode() + b"\n"
+        content == json.dumps(SetEntry(key="a", value="1").to_dict()).encode() + b"\n"
     )
 
 
 def test_replay_drops_and_truncates_a_torn_last_entry(wal, wal_path):
-    wal.append({"op": "set", "key": "a", "value": "1"})
-    wal.append({"op": "set", "key": "b", "value": "2"})
+    wal.append(SetEntry(key="a", value="1"))
+    wal.append(SetEntry(key="b", value="2"))
 
     with open(wal_path, "rb") as f:
         wal_bytes = f.read()
@@ -55,18 +55,18 @@ def test_replay_drops_and_truncates_a_torn_last_entry(wal, wal_path):
 
     entries = wal.replay()
 
-    assert entries == [{"op": "set", "key": "a", "value": "1"}]
+    assert entries == [SetEntry(key="a", value="1")]
 
     with open(wal_path, "rb") as f:
         repaired = f.read()
     assert (
-        repaired == json.dumps({"op": "set", "key": "a", "value": "1"}).encode() + b"\n"
+        repaired == json.dumps(SetEntry(key="a", value="1").to_dict()).encode() + b"\n"
     )
 
 
 def test_append_after_repaired_truncation_stays_valid(wal, wal_path):
-    wal.append({"op": "set", "key": "a", "value": "1"})
-    wal.append({"op": "set", "key": "b", "value": "2"})
+    wal.append(SetEntry(key="a", value="1"))
+    wal.append(SetEntry(key="b", value="2"))
 
     with open(wal_path, "rb") as f:
         wal_bytes = f.read()
@@ -74,16 +74,16 @@ def test_append_after_repaired_truncation_stays_valid(wal, wal_path):
         f.write(wal_bytes[:-3])
 
     wal.replay()
-    wal.append({"op": "set", "key": "c", "value": "3"})
+    wal.append(SetEntry(key="c", value="3"))
 
     assert wal.replay() == [
-        {"op": "set", "key": "a", "value": "1"},
-        {"op": "set", "key": "c", "value": "3"},
+        SetEntry(key="a", value="1"),
+        SetEntry(key="c", value="3"),
     ]
 
 
 def test_clear_empties_the_file(wal, wal_path):
-    wal.append({"op": "set", "key": "a", "value": "1"})
+    wal.append(SetEntry(key="a", value="1"))
 
     wal.clear()
 
@@ -103,15 +103,15 @@ def test_clear_on_nonexistent_file_creates_empty_file(tmp_path):
 
 
 def test_append_repairs_leftover_bytes_from_a_previous_failed_write(wal, wal_path):
-    wal.append({"op": "set", "key": "a", "value": "1"})
+    wal.append(SetEntry(key="a", value="1"))
 
     # Simulate a write that raised before finishing
     with open(wal_path, "ab") as f:
         f.write(b'{"op": "set", "key": "b')
 
-    wal.append({"op": "set", "key": "c", "value": "3"})
+    wal.append(SetEntry(key="c", value="3"))
 
     assert wal.replay() == [
-        {"op": "set", "key": "a", "value": "1"},
-        {"op": "set", "key": "c", "value": "3"},
+        SetEntry(key="a", value="1"),
+        SetEntry(key="c", value="3"),
     ]

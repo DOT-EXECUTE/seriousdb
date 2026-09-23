@@ -15,7 +15,7 @@ import time
 from threading import Lock
 
 from .exceptions import ResourceNotFoundError, ServiceUnavailableError
-from .wal import WriteAheadLog
+from .wal import DeleteEntry, SetEntry, WalEntry, WriteAheadLog
 
 logger = logging.getLogger(__name__)
 
@@ -84,7 +84,7 @@ class Cache:
         with self.lock:
             db = require_db(self)
             is_new_key = key not in db
-            self._record_write({"op": "set", "key": key, "value": value})
+            self._record_write(SetEntry(key=key, value=value))
             db[key] = value
             self._safe_maybe_compact()
         return value, is_new_key
@@ -147,7 +147,7 @@ class Cache:
             db = require_db(self)
             val = db.get(key, None)
             if val is not None:
-                self._record_write({"op": "delete", "key": key})
+                self._record_write(DeleteEntry(key=key))
                 db.pop(key, None)
                 self._safe_maybe_compact()
         if val is None:
@@ -210,8 +210,8 @@ class Cache:
             self.wal = WriteAheadLog(f"{filename}.wal")
             replayed = self.wal.replay()
             self._writes_since_compact = len(replayed)
-            for op in replayed:
-                self._apply_op(op)
+            for entry in replayed:
+                entry.apply(require_db(self))
 
     def flush(self) -> None:
         """No-op, kept for backward compatibility.
@@ -224,24 +224,24 @@ class Cache:
 
     # ------ Write-ahead log orchestration -----------------------------------------#
 
-    def _record_write(self, op: dict) -> None:
-        """Append `op` to the write-ahead log and bump the write counter.
+    def _record_write(self, entry: WalEntry) -> None:
+        """Append `entry` to the write-ahead log and bump the write counter.
 
-        Must be called, and must succeed, before `op` is applied to `self.db`,
+        Must be called, and must succeed, before `entry` is applied to `self.db`,
         a failed append must never leave memory and the log disagreeing about
         what happened.
 
         Parameters
         ----------
-        op : dict
-            A JSON-serializable write operation.
+        entry : WalEntry
+                    The entry to append.
 
         Raises
         ------
         OSError
             If the write-ahead log cannot be written.
         """
-        require_wal(self).append(op)
+        require_wal(self).append(entry)
         self._writes_since_compact += 1
 
     def _safe_maybe_compact(self) -> None:
@@ -259,21 +259,6 @@ class Cache:
             logger.error(
                 "Compaction failed after durable write to %s: %s", self.filename, e
             )
-
-    def _apply_op(self, op: dict) -> None:
-        """Apply a single decoded write-ahead log entry to `self.db`.
-
-        Parameters
-        ----------
-        op : dict
-            A decoded write-ahead entry entry, as produced by :meth:`~seriousdb.wal.WriteAheadLog.append`.
-        """
-        db = require_db(self)
-        db_op = op.get("op")
-        if db_op == "set":
-            db[op["key"]] = op["value"]
-        elif db_op == "delete":
-            db.pop(op["key"], None)
 
     def _compact(self) -> None:
         """Write `self.db` to `self.filename` and clear the write-ahead log.
