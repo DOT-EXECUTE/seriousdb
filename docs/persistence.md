@@ -22,5 +22,6 @@ permission failures can still prevent loading.
 - Separate `Cache` instances and separate processes have independent data and locks. Concurrent
   writes to the same file from more than one of them are not coordinated and can overwrite each
   other's changes.
-- Writes overwrite the file directly without atomic replacement or `fsync`. A crash can lose data or
-  leave an incomplete file. A failed flush does not roll back the in-memory change.
+- Each flush writes to a temp file in the same directory, then calls `fsync` on it and finally
+  replaces the database with `os.replace`. A crash leaves either the old or the new file. A failed
+  flush does not roll back the in memory change and can leave the temporary file behind.
