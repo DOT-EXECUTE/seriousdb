@@ -1,8 +1,10 @@
 """Tests for the Cache interface and basic database operations."""
 
 import json
+from pathlib import Path
 
 import pytest
+from pytest import MonkeyPatch
 
 from seriousdb.cache import COMPACTION_THRESHOLD, Cache, require_db
 from seriousdb.exceptions import ResourceNotFoundError, ServiceUnavailableError
@@ -366,6 +368,19 @@ def test_replay_repairs_torn_wal_before_later_appends(db_path):
 
 def boom(*args, **kwargs):
     raise RuntimeError("simulated crash mid-compact")
+
+
+def test_write_default_failure_does_not_create_destination(
+    tmp_path: Path, monkeypatch: MonkeyPatch
+):
+    db_file = tmp_path / ".sdb"
+    monkeypatch.setattr(json, "dumps", boom)
+
+    cache = Cache()
+    with pytest.raises(RuntimeError):
+        cache.load(str(db_file))
+
+    assert not db_file.exists()
 
 
 def test_compact_failure_does_not_corrupt_existing_snapshot(db_path, monkeypatch):

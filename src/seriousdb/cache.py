@@ -277,16 +277,7 @@ class Cache:
         if self.db is None or self.filename is None:
             return
 
-        dir_name = os.path.dirname(self.filename) or "."
-        with tempfile.NamedTemporaryFile("wb", dir=dir_name, delete=False) as tmp_file:
-            tmp_file.write(json.dumps(self.db).encode())
-            tmp_file.flush()
-            os.fsync(tmp_file.fileno())
-        try:
-            os.replace(tmp_file.name, self.filename)
-        except OSError:
-            os.unlink(tmp_file.name)
-            raise
+        _atomic_write_json(self.filename, self.db)
         logger.info("Compacted database into %s", self.filename)
 
         if self.wal is not None:
@@ -295,9 +286,35 @@ class Cache:
         self._writes_since_compact = 0
 
 
+def _atomic_write_json(filename: str, data: dict[str, str]) -> None:
+    """Write `data` to `filename` atomically, via a temp file and `os.replace`.
+
+    Cleans up the temporary file if `os.replace` fails, rather than
+    leaving it behind in the destination directory.
+
+    Raises
+    ------
+    OSError
+        If the temporary or final files cannot be written.
+    """
+    dir_name = os.path.dirname(filename) or "."
+    with tempfile.NamedTemporaryFile("wb", dir=dir_name, delete=False) as tmp_file:
+        try:
+            tmp_file.write(json.dumps(data).encode())
+            tmp_file.flush()
+            os.fsync(tmp_file.fileno())
+        except Exception:
+            os.unlink(tmp_file.name)
+            raise
+    try:
+        os.replace(tmp_file.name, filename)
+    except OSError:
+        os.unlink(tmp_file.name)
+        raise
+
+
 def _write_default(filename: str) -> dict[str, str]:
-    with open(filename, "wb") as f:
-        f.write(json.dumps(DEFAULT_DB).encode())
+    _atomic_write_json(filename, DEFAULT_DB)
     return dict(DEFAULT_DB)
 
 
