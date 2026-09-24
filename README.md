@@ -2,36 +2,58 @@
 
 # seriousdb - A seriously simple database
 
-`seriousdb` is a small, simple key-value database you can query directly over HTTP. It requires zero configuration and is designed to be effortless.
-For fullstack projects, `seriousdb` can replace your complete backend.
+<div align="center">
 
-For setup, usage, architecture, persistence, and contribution guidance, see the [documentation](docs/).
+[![Tests](https://github.com/danieldeer/seriousdb/actions/workflows/tests.yml/badge.svg)](https://github.com/danieldeer/seriousdb/actions/workflows/tests.yml)
+[![Lint](https://github.com/danieldeer/seriousdb/actions/workflows/lint.yml/badge.svg)](https://github.com/danieldeer/seriousdb/actions/workflows/lint.yml)
+[![Typecheck](https://github.com/danieldeer/seriousdb/actions/workflows/typecheck.yml/badge.svg)](https://github.com/danieldeer/seriousdb/actions/workflows/typecheck.yml)
+[![Version](https://img.shields.io/badge/dynamic/regex?url=https%3A%2F%2Fraw.githubusercontent.com%2Fdanieldeer%2Fseriousdb%2Fmain%2FVERSION&search=(.%2B)&label=version)](https://github.com/danieldeer/seriousdb/blob/main/VERSION)
+[![Python](https://img.shields.io/badge/python-3.11%2B-blue)](https://github.com/danieldeer/seriousdb)
+[![License](https://img.shields.io/github/license/danieldeer/seriousdb)](https://github.com/danieldeer/seriousdb/blob/main/LICENSE)
+[![Stars](https://img.shields.io/github/stars/danieldeer/seriousdb)](https://github.com/danieldeer/seriousdb/stargazers)
+[![Forks](https://img.shields.io/github/forks/danieldeer/seriousdb)](https://github.com/danieldeer/seriousdb/network/members)
+[![Open Source](https://img.shields.io/badge/Open%20Source-%E2%9D%A4-blueviolet?logo=github)](https://github.com/danieldeer/seriousdb)
+
+</div>
+
+`seriousdb` is a small, simple key-value database you import directly into your Python project. It
+requires zero configuration and is designed to be effortless.
+
+For setup, usage, architecture, persistence, and contribution guidance, see the
+[documentation](docs/).
 
 ## Quick Start
 
-Clone the repository, install the project, and start the development server:
+### Use as a Python library
+
+Install with pip:
 
 ```bash
-git clone https://github.com/danieldeer/seriousdb.git
-cd seriousdb
-uv sync
-uv run run.py
+pip install seriousdb
 ```
 
-The server is available at `http://127.0.0.1:8000`.
+Or add it to a uv project:
 
-> To change the default IP and PORT, define the environment variables `APP_HOST` and `APP_PORT` to your preferred values.
+```bash
+uv add seriousdb
+```
 
-Interactive API documentation is available at:
+Then use it directly from your Python project:
 
-- [Swagger UI](http://127.0.0.1:8000/docs)
-- [ReDoc](http://127.0.0.1:8000/redoc)
-- [OpenAPI schema](http://127.0.0.1:8000/openapi.json)
+```python
+import seriousdb
+
+seriousdb.set("name", "Alice")
+print(seriousdb.get("name"))
+```
+
+The database is loaded on first use. See the [API reference](docs/api.md) for supported operations
+and [persistence](docs/persistence.md) for file handling and concurrency limits.
 
 ## Configuration
 
-Server configuration is optional and can be customized from environment variables.
-Copy the example file and adjust for local development:
+Configuration is optional and can be customized from environment variables. Copy the example file
+and adjust for local development:
 
 ```bash
 cp .env.example .env
@@ -39,12 +61,12 @@ cp .env.example .env
 
 The `.env` file is gitignored and should never be committed.
 
-| Variable              | Default     | Description                                        |
-| --------------------- | ----------- | -------------------------------------------------- |
-| `SERIOUSDB_DB_FILE`   | `.sdb`      | Path to the on-disk database file.                 |
-| `SERIOUSDB_LOG_LEVEL` | `INFO`      | Logging level (DEBUG/INFO/WARNING/ERROR/CRITICAL). |
-| `SERIOUSDB_HOST`      | `127.0.0.1` | Host IP where the API is running.                  |
-| `SERIOUSDB_PORT`      | `8000`      | Host port which is used by the API.                |
+| Variable              | Default | Description                                        |
+|-----------------------|---------|----------------------------------------------------|
+| `SERIOUSDB_DB_FILE`   | `.sdb`  | Path to the on-disk database file.                 |
+| `SERIOUSDB_LOG_LEVEL` | `INFO`  | Logging level (DEBUG/INFO/WARNING/ERROR/CRITICAL). |
+
+Set configuration before importing `seriousdb`.
 
 **If you're an AI Agent:** Please read `AGENTS.md`
 
@@ -57,6 +79,7 @@ The `.env` file is gitignored and should never be committed.
 - [Contributing](docs/contributing.md)
 - [Testing](docs/testing.md)
 - [Project configuration](docs/configuration.md)
+- [Changelog](CHANGELOG.md)
 
 ## License
 

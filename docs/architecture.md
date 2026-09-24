@@ -1,20 +1,31 @@
 # Architecture
 
-The application is currently intentionally small:
+The project is currently intentionally small:
 
-- `main.py` creates the FastAPI application and defines the HTTP routes.
-- The database is represented as a Python dictionary in memory while a request is handled.
+- `api.py` exposes the public, module-level functions (`get`, `set`, `delete`, ...) that other
+  Python code imports and calls directly.
+- `cache.py` implements `Cache`, an in-memory dictionary guarded by a lock, which the API functions
+  operate on.
 - The dictionary is loaded from and written to the local `.sdb` file.
 
-The service starts with zero entries when `.sdb` does not exist. There is no separate database process or client library.
+The database starts with zero entries when `.sdb` does not exist. seriousdb runs in the same process
+as its caller; there is no separate database process.
 
-## Request flow
+## Call flow
 
-1. FastAPI receives a request.
-2. The route loads the dictionary from `.sdb`.
-3. A `PUT` updates and rewrites the file; a `GET` reads the requested value; a `HEAD` only returns the header; a `DELETE` deletes the requested key.
-4. The route returns the value or a `404` error.
+1. A caller imports `seriousdb` and calls a function, e.g. `seriousdb.set(key, value)`.
+1. On first use, the module loads the dictionary from `.sdb` automatically (or from wherever
+   `seriousdb.api.load(path)` was pointed).
+1. `set` and `delete` update the in-memory dictionary and durably append the change to a
+write-ahead log (`.sdb.wal`) before returning. The `.sdb` snapshot itself is only rewritten
+periodically, during compaction. `get`, `exists`, `get_all`, `get_bulk` and `count` read the
+in-memory dictionary directly. See [persistence](persistence.md) for details.
+
+Separate `Cache` instances (and separate processes) have independent data and locks; see
+[persistence](persistence.md#current-constraints) for the consequences of using the same file from
+more than one of them.
 
 ## Error handling
 
-`exceptions.py` defines `ApplicationError` and its subclasses; `cache.py` and the routes raise them instead of `HTTPException`. `error_handlers.py` translates them into the responses documented in [the API reference](api.md) and answers anything unexpected with a generic `500`.
+`exceptions.py` defines `ApplicationError` and its subclasses; `cache.py` and `api.py` raise them
+directly wherever an operation can't succeed. Callers handle them like any other Python exception.

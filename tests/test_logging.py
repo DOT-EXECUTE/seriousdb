@@ -3,11 +3,8 @@
 import logging
 
 import pytest
-from fastapi import FastAPI
-from fastapi.testclient import TestClient
 
 from seriousdb.cache import Cache, require_db
-from seriousdb.error_handlers import register_exception_handlers
 from seriousdb.exceptions import ServiceUnavailableError
 from seriousdb.logging_config import configure_logging
 
@@ -87,16 +84,13 @@ class TestCacheLogging:
             for r in caplog.records
         ), f"Expected corruption warning, got: {[r.message for r in caplog.records]}"
 
-    def test_flush_logs_error_when_db_not_loaded(self, caplog):
+    def test_flush_is_a_noop(self, caplog):
         cache = Cache()  # never loaded
 
-        with caplog.at_level(logging.ERROR, logger="seriousdb.cache"):
+        with caplog.at_level(logging.DEBUG, logger="seriousdb.cache"):
             cache.flush()
 
-        assert any(
-            "Cannot flush" in r.message and r.levelno == logging.ERROR
-            for r in caplog.records
-        )
+        assert not any(r.levelno >= logging.WARNING for r in caplog.records)
 
     def test_require_db_raises_when_db_is_none(self):
         cache = Cache()
@@ -108,37 +102,3 @@ class TestCacheLogging:
         cache = Cache()
         cache.db = {"a": "b"}
         assert require_db(cache) is cache.db
-
-
-class TestErrorHandlerLogging:
-    """Verify that unexpected errors are logged with stack traces."""
-
-    @pytest.fixture
-    def boom_client(self):
-        app = FastAPI()
-        register_exception_handlers(app)
-
-        @app.get("/boom")
-        def boom():
-            raise RuntimeError("kaboom")
-
-        return TestClient(app, raise_server_exceptions=False)
-
-    def test_unexpected_error_is_logged_with_traceback(self, boom_client, caplog):
-        with caplog.at_level(logging.ERROR, logger="seriousdb.error_handlers"):
-            boom_client.get("/boom")
-
-        error_records = [
-            r
-            for r in caplog.records
-            if r.levelno == logging.ERROR and "seriousdb.error_handlers" in r.name
-        ]
-        assert error_records, "Expected an ERROR log from error_handlers"
-        # logger.exception() records include exc_info
-        assert error_records[0].exc_info is not None
-        assert error_records[0].exc_info[1] is not None
-
-    def test_unexpected_error_log_does_not_leak_to_client(self, boom_client):
-        response = boom_client.get("/boom")
-        assert response.status_code == 500
-        assert "kaboom" not in response.text

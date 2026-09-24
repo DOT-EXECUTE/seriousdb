@@ -19,7 +19,6 @@ classifiers = [
 ]
 
 dependencies = [
-    "fastapi[standard]>=0.141.1",
     "python-dotenv>=1.0",
 ]
 
@@ -29,10 +28,15 @@ Repository = "https://github.com/danieldeer/seriousdb"
 Documentation = "https://github.com/danieldeer/seriousdb/tree/main/docs"
 
 [dependency-groups]
+benchmark = [
+    "pytest-benchmark>=5.3.0",
+]
 dev = [
+    "pre-commit>=4.6.2",
     "pytest>=9.1.1",
     "ruff>=0.16.7",
-	"ty>=0.0.81",
+    "ty>=0.0.81",
+    "pre-commit"
 ]
 
 [build-system]
@@ -43,7 +47,9 @@ build-backend = "setuptools.build_meta"
 where = ["src"]
 
 [tool.pytest.ini_options]
-pythonpath = ["src"]
+pythonpath = ["src", "."]
+testpaths = ["tests"]
+markers = ["benchmark: engine performance scenarios configured by pytest-benchmark"]
 
 [tool.ruff.lint]
 extend-select = ["D"]
@@ -52,9 +58,11 @@ extend-select = ["D"]
 convention = "numpy"
 
 [tool.ruff.lint.per-file-ignores]
-# Endpoints are documented through their decorator metadata instead.
-"src/seriousdb/main.py" = ["D100", "D103"]
+"benchmarks/**" = ["D"]
 "tests/**" = ["D"]
 
 [tool.ruff.format]
 docstring-code-format = true
+
+[tool.ty.environment]
+root = ["."]

@@ -2,7 +2,6 @@ name: TY Typecheck
 
 on:
   pull_request:
-    branches: [main]
   push:
     branches: [main]
 
